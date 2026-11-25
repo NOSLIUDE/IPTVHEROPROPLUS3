@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iptvhero.pro.data.repository.IptvRepository
 import com.iptvhero.pro.ui.components.ProfileManagerDialog
 import com.iptvhero.pro.ui.components.heroFocusable
 import com.iptvhero.pro.ui.theme.DcCyan
@@ -154,7 +155,7 @@ fun ProfileScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     items(profiles, key = { it.id }) { profile ->
-                        val badgeColor = when (profile.heroAvatar.uppercase()) {
+                        val badgeColor = when (profile.universe.uppercase()) {
                             "IRONMAN", "MARVEL" -> Color(0xFFE62429)
                             "BATMAN", "DC" -> Color(0xFF0476F2)
                             else -> Color(0xFF6A1B9A)
@@ -228,7 +229,7 @@ fun ProfileScreen(
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(Color(0xE6181018))
                                 .heroFocusable(RoundedCornerShape(16.dp)) {
-                                    onLoadHeroList(MainViewModel.DEFAULT_HERO_URL)
+                                    onLoadHeroList(IptvRepository.HERO_LIST_URL)
                                 }
                                 .padding(14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -289,7 +290,7 @@ fun ProfileScreen(
                 showManagerDialog = false
                 onLoadHeroList(url)
             },
-            onImportXtream = { server, user, pass ->
+            onImportXtream = { server: String, user: String, pass: String ->
                 showManagerDialog = false
                 onImportXtream(server, user, pass)
             }
