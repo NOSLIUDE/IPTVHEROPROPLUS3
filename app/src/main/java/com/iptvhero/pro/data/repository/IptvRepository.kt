@@ -949,11 +949,6 @@ class IptvRepository(
         )
     }
 
-    /**
-     * Exporta todos os perfis no formato exato do exportProfilesTXT() do index_2.html:
-     * sourceType|sourceLabel|server|user|pass|validity|maxConnections|hero|live|vod|series
-     */
-
     @Volatile
     private var cachedXmltvKey: String? = null
     @Volatile
@@ -1002,7 +997,6 @@ class IptvRepository(
                 if (jsonItems.isNotEmpty()) return@withContext jsonItems
             }
 
-            // Fallback XMLTV quando get_short_epg não retorna itens ou quando a fonte é M3U/XMLTV
             fetchXmltvFallback(profile, resolvedId, channelTitle)
         }
 
