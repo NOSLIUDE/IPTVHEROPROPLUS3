@@ -1,17 +1,21 @@
 package com.iptvhero.pro.ui.viewmodel
 
-import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.iptvhero.pro.data.local.AppDatabase
 import com.iptvhero.pro.data.local.ChannelEntity
 import com.iptvhero.pro.data.local.ProfileEntity
-import com.iptvhero.pro.data.repository.PlaylistParser
+import com.iptvhero.pro.data.repository.BulkProgress
+import com.iptvhero.pro.data.repository.EpgProgramItem
+import com.iptvhero.pro.data.repository.IptvRepository
+import com.iptvhero.pro.data.download.OfflineDownloadManager
+import com.iptvhero.pro.data.download.OfflineDownloadState
+import com.iptvhero.pro.data.repository.MediaDetails
 import com.iptvhero.pro.data.repository.SeriesEpisode
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,224 +25,431 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.net.URLEncoder
 
 data class MainUiState(
-    val isProfilesLoading: Boolean = true,
-    val navigateToMainScreen: Boolean = false,
+    val currentStreamUrl: String? = null,
+    val currentChannelTitle: String = "",
     val isLoading: Boolean = false,
     val loadingProgress: Float = 0f,
     val loadingStage: String = "",
+    val profileLoadProgress: Float = 0f,
+    val profileLoadStage: String = "",
+    val isProfileLoading: Boolean = false,
+    val bulkProgress: BulkProgress? = null,
     val errorMessage: String? = null,
     val successMessage: String? = null,
+    val pendingHeroUrls: List<String>? = null,
     val pendingHeroMessage: String? = null,
-    val currentStreamUrl: String? = null,
-    val currentChannelTitle: String = "",
-    val playlistTitles: List<String> = emptyList(),
-    val playlistUrls: List<String> = emptyList(),
-    val playlistRemoteIds: List<String?> = emptyList(),
-    val playlistCurrentIndex: Int = 0,
+    val pendingHeroHash: String? = null,
+    val seasonsMap: Map<String, List<SeriesEpisode>> = emptyMap(),
+    val isLoadingSeasons: Boolean = false,
+    val selectedSeriesTitle: String = "",
+    val selectedMediaDetails: MediaDetails? = null,
+    val isLoadingMediaDetails: Boolean = false,
+    val selectedMovieDownloadKey: String = "",
     val lastSelectedTab: String = "CANAIS",
     val lastSelectedCategory: String = "",
     val lastSearchQuery: String = "",
     val lastFocusedIndex: Int = 0,
     val lastOpenedChannelTitle: String = "",
-    val selectedMediaChannel: ChannelEntity? = null,
-    val relatedChannels: List<ChannelEntity> = emptyList(),
-    val selectedSeriesTitle: String = "",
-    val isLoadingSeasons: Boolean = false,
-    val seasonsMap: Map<String, List<SeriesEpisode>> = emptyMap()
+    val playbackPlaylistTitles: List<String> = emptyList(),
+    val playbackPlaylistUrls: List<String> = emptyList(),
+    val playbackPlaylistRemoteIds: List<String?> = emptyList(),
+    val playbackIndex: Int = -1,
+    val currentEpgItems: List<EpgProgramItem> = emptyList(),
+    val isLoadingEpg: Boolean = false,
+    val isHeroSplashActive: Boolean = false,
+    val heroSplashMessage: String = "Carregando Hero Lista..."
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
-class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val db = AppDatabase.getInstance(application)
-    private val profileDao = db.profileDao()
-    private val channelDao = db.channelDao()
+class MainViewModel(
+    private val repository: IptvRepository,
+    context: Context
+) : ViewModel() {
 
-    val profiles: Flow<List<ProfileEntity>> = profileDao.observeAll()
-
-    private val _activeProfileId = MutableStateFlow<Long?>(null)
-    var activeProfile by mutableStateOf<ProfileEntity?>(null)
-        private set
-
-    val channels: Flow<List<ChannelEntity>> = _activeProfileId.flatMapLatest { id ->
-        if (id == null) flowOf(emptyList()) else channelDao.observeByProfile(id)
-    }
+    private val prefs = context.getSharedPreferences("iptv_hero_prefs", Context.MODE_PRIVATE)
+    val downloadManager = OfflineDownloadManager(context.applicationContext)
+    val downloadStates: StateFlow<Map<String, OfflineDownloadState>> = downloadManager.states
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    private var pendingHeroUrl: String = DEFAULT_HERO_URL
+    val profiles: Flow<List<ProfileEntity>> = repository.allProfiles
 
-    init {
-        initializeProfiles()
+    var activeProfile by mutableStateOf<ProfileEntity?>(null)
+        private set
+
+    private val activeProfileIdFlow = MutableStateFlow<Long?>(null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val channels: Flow<List<ChannelEntity>> = activeProfileIdFlow.flatMapLatest { profileId ->
+        if (profileId != null) repository.getChannelsByProfile(profileId) else flowOf(emptyList())
     }
 
-    private fun initializeProfiles() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isProfilesLoading = true) }
-            withContext(Dispatchers.IO) {
-                val existing = profileDao.getAll()
-                if (existing.isEmpty()) {
-                    profileDao.insert(
-                        ProfileEntity(
-                            name = "Herói Marvel & DC",
-                            heroAvatar = "IRONMAN",
-                            sourceType = "GITHUB_HERO",
-                            urlOrServer = DEFAULT_HERO_URL
-                        )
-                    )
-                    profileDao.insert(
-                        ProfileEntity(
-                            name = "Cavaleiro das Trevas",
-                            heroAvatar = "BATMAN",
-                            sourceType = "GITHUB_HERO",
-                            urlOrServer = DEFAULT_HERO_URL
-                        )
-                    )
+    init {
+        val savedTab = prefs.getString("last_selected_tab", "CANAIS") ?: "CANAIS"
+        val savedCat = prefs.getString("last_selected_category", "") ?: ""
+        val savedSearch = prefs.getString("last_search_query", "") ?: ""
+        val savedIndex = prefs.getInt("last_focused_index", 0)
+        val savedTitle = prefs.getString("last_opened_channel_title", "") ?: ""
+        val hasHeroHash = !prefs.getString("hero_list_hash", null).isNullOrBlank()
+        _uiState.update {
+            it.copy(
+                lastSelectedTab = savedTab,
+                lastSelectedCategory = savedCat,
+                lastSearchQuery = savedSearch,
+                lastFocusedIndex = savedIndex,
+                lastOpenedChannelTitle = savedTitle,
+                isHeroSplashActive = !hasHeroHash,
+                heroSplashMessage = if (!hasHeroHash) {
+                    "Carregando Hero Lista pela primeira vez..."
+                } else {
+                    "Carregando universo..."
                 }
-            }
-            _uiState.update { it.copy(isProfilesLoading = false) }
+            )
+        }
+        loadActiveProfile()
+    }
+
+    fun saveNavigationHistory(
+        tab: String,
+        category: String,
+        search: String,
+        focusedIndex: Int,
+        openedTitle: String? = null
+    ) {
+        val titleToSave = openedTitle ?: _uiState.value.lastOpenedChannelTitle
+        prefs.edit()
+            .putString("last_selected_tab", tab)
+            .putString("last_selected_category", category)
+            .putString("last_search_query", search)
+            .putInt("last_focused_index", focusedIndex.coerceAtLeast(0))
+            .putString("last_opened_channel_title", titleToSave)
+            .apply()
+        _uiState.update {
+            it.copy(
+                lastSelectedTab = tab,
+                lastSelectedCategory = category,
+                lastSearchQuery = search,
+                lastFocusedIndex = focusedIndex.coerceAtLeast(0),
+                lastOpenedChannelTitle = titleToSave
+            )
         }
     }
 
-    fun consumeNavigateToMainScreen() {
-        _uiState.update { it.copy(navigateToMainScreen = false) }
-    }
-
-    fun selectProfile(profileId: Long) {
-        selectProfileInternal(profileId, enterMainAfter = false)
-    }
-
-    fun selectProfileAndEnterApp(profileId: Long) {
-        selectProfileInternal(profileId, enterMainAfter = true)
-    }
-
-    private fun selectProfileInternal(profileId: Long, enterMainAfter: Boolean) {
+    fun loadActiveProfile() {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    loadingProgress = 0.25f,
-                    loadingStage = "Carregando perfil selecionado...",
-                    errorMessage = null,
-                    navigateToMainScreen = false
-                )
-            }
-            val profile = withContext(Dispatchers.IO) { profileDao.getById(profileId) }
-            if (profile != null) {
-                activeProfile = profile
-                _activeProfileId.value = profile.id
+            val active = repository.getActiveProfile()
+            activeProfile = active
+            activeProfileIdFlow.value = active?.id
+        }
+    }
 
-                if (profile.urlOrServer.isNotBlank()) {
-                    _uiState.update {
-                        it.copy(
-                            loadingProgress = 0.65f,
-                            loadingStage = "Sincronizando canais de ${profile.name}..."
-                        )
-                    }
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            val parsed = if (profile.sourceType == "XTREAM") {
-                                PlaylistParser.fetchXtreamAll(
-                                    profile.urlOrServer,
-                                    profile.username,
-                                    profile.password,
-                                    profile.id
-                                )
-                            } else {
-                                val text = PlaylistParser.fetchText(profile.urlOrServer)
-                                PlaylistParser.parseM3uOrTxt(text, profile.id)
-                            }
-                            if (parsed.isNotEmpty()) {
-                                channelDao.deleteByProfile(profile.id)
-                                channelDao.insertAll(parsed)
-                            }
+    /**
+     * Identico ao activateProfile(id) do index_2.html:
+     * Ativa o perfil e busca os canais/filmes/series da fonte (Xtream ou M3U) se necessario.
+     */
+    fun selectProfile(profileId: Long, onReady: (() -> Unit)? = null) {
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingProgress = 0.12f,
+                loadingStage = "Conectando perfil e autenticando...",
+                isProfileLoading = true,
+                profileLoadProgress = 0.12f,
+                profileLoadStage = "Conectando perfil e carregando canais, filmes e séries...",
+                errorMessage = null,
+                successMessage = "Conectando perfil..."
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val count = repository.activateAndSyncProfile(
+                    profileId = profileId,
+                    onStage = { progress, stageText ->
+                        val clamped = progress.coerceIn(0.05f, 0.98f)
+                        _uiState.update { st ->
+                            st.copy(
+                                isLoading = true,
+                                loadingProgress = clamped,
+                                loadingStage = stageText,
+                                isProfileLoading = true,
+                                profileLoadProgress = clamped,
+                                profileLoadStage = stageText,
+                                successMessage = stageText
+                            )
                         }
                     }
-                }
-            }
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    loadingProgress = 1f,
-                    loadingStage = "",
-                    navigateToMainScreen = enterMainAfter && profile != null
                 )
+                val active = repository.getActiveProfile()
+                activeProfile = active
+                activeProfileIdFlow.value = active?.id
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        loadingProgress = 1f,
+                        loadingStage = "Concluído ($count itens carregados)",
+                        isProfileLoading = false,
+                        profileLoadProgress = 1f,
+                        profileLoadStage = "Concluído ($count itens carregados)",
+                        successMessage = "Perfil ${active?.name ?: ""} ativado ($count itens)."
+                    )
+                }
+                onReady?.invoke()
+            } catch (e: Exception) {
+                loadActiveProfile()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        loadingProgress = 0f,
+                        loadingStage = "",
+                        isProfileLoading = false,
+                        profileLoadProgress = 0f,
+                        profileLoadStage = "",
+                        successMessage = null,
+                        errorMessage = "Erro ao carregar perfil: ${e.message ?: "Falha"}"
+                    )
+                }
+                onReady?.invoke()
             }
         }
     }
 
     fun deleteProfile(profileId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            channelDao.deleteByProfile(profileId)
-            profileDao.deleteById(profileId)
-            if (activeProfile?.id == profileId) {
-                activeProfile = null
-                _activeProfileId.value = null
-            }
+        viewModelScope.launch {
+            repository.deleteProfile(profileId)
+            loadActiveProfile()
         }
     }
 
-    fun loadHeroListFromGithub(url: String = DEFAULT_HERO_URL, force: Boolean = false) {
-        loadHeroInternal(url = url, force = force, enterMainAfter = false)
-    }
-
-    fun loadHeroListAndEnterApp(url: String = DEFAULT_HERO_URL, force: Boolean = true) {
-        loadHeroInternal(url = url, force = force, enterMainAfter = true)
-    }
-
-    private fun loadHeroInternal(url: String, force: Boolean, enterMainAfter: Boolean) {
+    fun clearAllProfiles() {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    loadingProgress = 0.2f,
-                    loadingStage = "Baixando lista Hero...",
-                    errorMessage = null,
-                    navigateToMainScreen = false
-                )
-            }
+            repository.clearAllProfiles()
+            loadActiveProfile()
+            _uiState.update { it.copy(successMessage = "Todos os perfis removidos.", errorMessage = null) }
+        }
+    }
+
+    /**
+     * Identico ao loadHeroList() do index_2.html:
+     * Baixa o arquivo all_in_one.txt com cache-bust, calcula SHA-256 e compara com a ultima versao.
+     */
+    fun hasSavedHeroHash(): Boolean = !prefs.getString("hero_list_hash", null).isNullOrBlank()
+
+    fun loadHeroListFromGithub(url: String = IptvRepository.HERO_LIST_URL, force: Boolean = false) {
+        val isFirstRun = !hasSavedHeroHash()
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                isHeroSplashActive = isFirstRun || it.isHeroSplashActive,
+                heroSplashMessage = if (isFirstRun) {
+                    "Carregando Hero Lista inicial..."
+                } else {
+                    "Verificando alterações na Hero Lista..."
+                },
+                errorMessage = null,
+                successMessage = "Verificando atualizacoes da Hero Lista..."
+            )
+        }
+        viewModelScope.launch {
             try {
-                val targetProfile = withContext(Dispatchers.IO) {
-                    val current = activeProfile ?: profileDao.getAll().firstOrNull()
-                    if (current != null) {
-                        val updated = current.copy(urlOrServer = url, sourceType = "GITHUB_HERO")
-                        profileDao.insert(updated)
-                        updated
-                    } else {
-                        val id = profileDao.insert(
-                            ProfileEntity(
-                                name = "Hero Lista",
-                                heroAvatar = "MARVEL",
-                                sourceType = "GITHUB_HERO",
-                                urlOrServer = url
-                            )
+                val (rawText, urls) = repository.fetchHeroListRaw(url)
+                val hash = repository.sha256Hex(rawText)
+                val prevHash = prefs.getString("hero_list_hash", null)
+
+                if (!force && prevHash != null && prevHash == hash) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isHeroSplashActive = false,
+                            pendingHeroUrls = urls,
+                            pendingHeroHash = hash,
+                            pendingHeroMessage = "Hero Lista sem alteracoes (${urls.size} listas). Deseja reprocessar mesmo assim?"
                         )
-                        profileDao.getById(id)!!
                     }
-                }
-                activeProfile = targetProfile
-                _activeProfileId.value = targetProfile.id
-
-                _uiState.update { it.copy(loadingProgress = 0.6f, loadingStage = "Processando canais, filmes e séries...") }
-
-                val items = withContext(Dispatchers.IO) {
-                    val raw = PlaylistParser.fetchText(url)
-                    val parsed = PlaylistParser.parseM3uOrTxt(raw, targetProfile.id)
-                    channelDao.deleteByProfile(targetProfile.id)
-                    channelDao.insertAll(parsed)
-                    parsed
+                    return@launch
                 }
 
                 _uiState.update {
                     it.copy(
+                        isHeroSplashActive = true,
+                        heroSplashMessage = "Atualizando Hero Lista (${urls.size} listas)..."
+                    )
+                }
+                executeHeroBulk(urls, hash)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isHeroSplashActive = false,
+                        successMessage = null,
+                        errorMessage = "Falha Hero Lista: ${e.message ?: e.javaClass.simpleName}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun confirmPendingHeroList() {
+        val urls = _uiState.value.pendingHeroUrls ?: return
+        val hash = _uiState.value.pendingHeroHash.orEmpty()
+        _uiState.update {
+            it.copy(
+                pendingHeroUrls = null,
+                pendingHeroMessage = null,
+                isHeroSplashActive = true,
+                heroSplashMessage = "Reprocessando Hero Lista (${urls.size} listas)..."
+            )
+        }
+        viewModelScope.launch {
+            executeHeroBulk(urls, hash)
+        }
+    }
+
+    fun dismissPendingHeroList() {
+        _uiState.update {
+            it.copy(
+                pendingHeroUrls = null,
+                pendingHeroMessage = null,
+                isLoading = false,
+                isHeroSplashActive = false
+            )
+        }
+    }
+
+    private suspend fun executeHeroBulk(urls: List<String>, hash: String) {
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                isHeroSplashActive = true,
+                heroSplashMessage = "Processando ${urls.size} listas da Hero Lista...",
+                errorMessage = null,
+                successMessage = "Processando ${urls.size} listas da Hero Lista..."
+            )
+        }
+        val (ok, fail) = repository.processBulkLines(urls, isHeroOrigin = true) { prog ->
+            val stageText = "Processando ${prog.current}/${prog.total} (OK: ${prog.success} | Falhas: ${prog.failed})"
+            _uiState.update {
+                it.copy(
+                    bulkProgress = prog,
+                    heroSplashMessage = stageText,
+                    successMessage = stageText
+                )
+            }
+        }
+
+        prefs.edit()
+            .putString("hero_list_hash", hash)
+            .putLong("hero_list_checked_at", System.currentTimeMillis())
+            .apply()
+
+        val active = repository.getActiveProfile()
+        activeProfile = active
+        activeProfileIdFlow.value = active?.id
+
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                isHeroSplashActive = false,
+                bulkProgress = null,
+                successMessage = "Hero Lista concluida! Criados: $ok | Falhas: $fail"
+            )
+        }
+    }
+
+    /**
+     * Identico ao loadBulkTXT / processBulk do index_2.html:
+     * Cada linha vira um perfil de heroi individual.
+     */
+    fun importBatchTxt(fileContent: String) {
+        val lines = fileContent.split(Regex("\r?\n"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+
+        if (lines.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Nenhuma linha valida encontrada.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                successMessage = "Processando ${lines.size} entradas..."
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val (ok, fail) = repository.processBulkLines(lines, isHeroOrigin = true) { prog ->
+                    _uiState.update {
+                        it.copy(
+                            bulkProgress = prog,
+                            successMessage = "Lote: ${prog.current}/${prog.total} (OK: ${prog.success})"
+                        )
+                    }
+                }
+                val active = repository.getActiveProfile()
+                activeProfile = active
+                activeProfileIdFlow.value = active?.id
+                if (active != null) {
+                    runCatching { repository.activateAndSyncProfile(active.id) }
+                }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        bulkProgress = null,
+                        successMessage = "Lote concluido! $ok perfis criados ($fail falhas)."
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        bulkProgress = null,
+                        errorMessage = "Erro ao importar: ${e.message ?: "Falha"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun importXtream(server: String, user: String, pass: String) {
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingProgress = 0.2f,
+                loadingStage = "Autenticando Xtream e buscando canais, filmes e séries...",
+                isProfileLoading = true,
+                profileLoadProgress = 0.2f,
+                profileLoadStage = "Autenticando Xtream e buscando canais, filmes e séries...",
+                errorMessage = null,
+                successMessage = "Autenticando Xtream..."
+            )
+        }
+        viewModelScope.launch {
+            try {
+                _uiState.update {
+                    it.copy(
+                        loadingProgress = 0.55f,
+                        loadingStage = "Baixando canais, filmes e séries...",
+                        profileLoadProgress = 0.55f,
+                        profileLoadStage = "Baixando canais, filmes e séries..."
+                    )
+                }
+                val total = repository.loadXtreamData(server, user, pass)
+                val active = repository.getActiveProfile()
+                activeProfile = active
+                activeProfileIdFlow.value = active?.id
+                _uiState.update {
+                    it.copy(
                         isLoading = false,
                         loadingProgress = 1f,
-                        loadingStage = "",
-                        successMessage = "${items.size} itens carregados!",
-                        navigateToMainScreen = enterMainAfter
+                        loadingStage = "Concluído ($total itens)",
+                        isProfileLoading = false,
+                        profileLoadProgress = 1f,
+                        profileLoadStage = "Concluído ($total itens)",
+                        successMessage = "Xtream conectado (${active?.name})! $total itens."
                     )
                 }
             } catch (e: Exception) {
@@ -247,131 +458,293 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isLoading = false,
                         loadingProgress = 0f,
                         loadingStage = "",
-                        errorMessage = "Falha ao carregar lista: ${e.message ?: "Erro de rede"}",
-                        navigateToMainScreen = enterMainAfter
+                        isProfileLoading = false,
+                        profileLoadProgress = 0f,
+                        profileLoadStage = "",
+                        successMessage = null,
+                        errorMessage = "Erro Xtream: ${e.message ?: e.javaClass.simpleName}"
                     )
                 }
             }
         }
     }
 
-    fun importXtream(server: String, user: String, pass: String) {
-        importXtreamInternal(server, user, pass, enterMainAfter = false)
-    }
-
-    fun importXtreamAndEnterApp(server: String, user: String, pass: String) {
-        importXtreamInternal(server, user, pass, enterMainAfter = true)
-    }
-
-    private fun importXtreamInternal(server: String, user: String, pass: String, enterMainAfter: Boolean) {
+    fun openSeriesSeasons(seriesChannel: ChannelEntity, allSeriesItems: List<ChannelEntity> = emptyList()) {
+        val profile = activeProfile ?: return
+        val seriesId = seriesChannel.remoteId
+        _uiState.update {
+            it.copy(
+                isLoadingSeasons = true,
+                selectedSeriesTitle = seriesChannel.title,
+                seasonsMap = emptyMap(),
+                errorMessage = null
+            )
+        }
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    loadingProgress = 0.25f,
-                    loadingStage = "Autenticando servidor Xtream...",
-                    errorMessage = null,
-                    navigateToMainScreen = false
-                )
-            }
             try {
-                val targetProfile = withContext(Dispatchers.IO) {
-                    val id = profileDao.insert(
-                        ProfileEntity(
-                            name = "Xtream • ${user.trim()}",
-                            heroAvatar = "DC",
-                            sourceType = "XTREAM",
-                            urlOrServer = server.trim(),
-                            username = user.trim(),
-                            password = pass.trim()
+                if (!seriesId.isNullOrBlank() && !profile.server.isNullOrBlank()) {
+                    val seasons = repository.fetchSeriesSeasons(profile, seriesId)
+                    if (seasons.isNotEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                isLoadingSeasons = false,
+                                seasonsMap = seasons
+                            )
+                        }
+                        return@launch
+                    }
+                }
+
+                // Fallback para listas M3U ou séries já listadas por episódio (ex: "Nome S01E02")
+                val baseName = extractSeriesBaseTitle(seriesChannel.title)
+                val matching = allSeriesItems.filter {
+                    extractSeriesBaseTitle(it.title).equals(baseName, ignoreCase = true)
+                }.ifEmpty { listOf(seriesChannel) }
+
+                val grouped = linkedMapOf<String, MutableList<SeriesEpisode>>()
+                val seRegex = Regex("(?i)(?:S|T)(\\d{1,2})\\s*(?:E|EP)?(\\d{1,3})")
+                matching.forEachIndexed { idx, item ->
+                    val m = seRegex.find(item.title)
+                    val seasonKey = m?.groupValues?.getOrNull(1)?.toIntOrNull()?.toString() ?: "1"
+                    val epNum = m?.groupValues?.getOrNull(2)?.toIntOrNull() ?: (idx + 1)
+                    val ext = item.url.substringAfterLast('.', "mp4").substringBefore('?').takeIf { it.length in 2..5 } ?: "mp4"
+                    grouped.getOrPut(seasonKey) { mutableListOf() }.add(
+                        SeriesEpisode(
+                            id = "DIRECT_URL::${item.url}",
+                            episodeNum = epNum,
+                            title = item.title,
+                            extension = ext,
+                            duration = null
                         )
                     )
-                    profileDao.getById(id)!!
-                }
-                activeProfile = targetProfile
-                _activeProfileId.value = targetProfile.id
-
-                _uiState.update { it.copy(loadingProgress = 0.65f, loadingStage = "Importando Canais, VOD e Séries...") }
-
-                val items = withContext(Dispatchers.IO) {
-                    val parsed = PlaylistParser.fetchXtreamAll(server, user, pass, targetProfile.id)
-                    channelDao.deleteByProfile(targetProfile.id)
-                    channelDao.insertAll(parsed)
-                    parsed
                 }
 
+                val sortedSeasons = grouped.mapValues { (_, list) -> list.sortedBy { it.episodeNum } }
                 _uiState.update {
                     it.copy(
-                        isLoading = false,
-                        loadingProgress = 1f,
-                        loadingStage = "",
-                        successMessage = "${items.size} itens Xtream importados!",
-                        navigateToMainScreen = enterMainAfter
+                        isLoadingSeasons = false,
+                        seasonsMap = sortedSeasons
                     )
                 }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
-                        isLoading = false,
-                        errorMessage = "Erro Xtream: ${e.message}",
-                        navigateToMainScreen = enterMainAfter
+                        isLoadingSeasons = false,
+                        errorMessage = "Erro ao carregar episodios: ${e.message ?: "Falha"}"
                     )
                 }
             }
         }
     }
 
-    fun importBatchTxt(txtContent: String) {
-        importBatchTxtInternal(txtContent, enterMainAfter = false)
+    private fun extractSeriesBaseTitle(rawTitle: String): String {
+        return rawTitle
+            .replace(Regex("(?i)\\s*[-–:]?\\s*(?:S|T)\\d{1,2}\\s*(?:E|EP)?\\d{1,3}.*$"), "")
+            .replace(Regex("(?i)\\s*Temporada\\s*\\d+.*$"), "")
+            .trim()
+            .ifBlank { rawTitle.trim() }
     }
 
-    fun importBatchTxtAndEnterApp(txtContent: String) {
-        importBatchTxtInternal(txtContent, enterMainAfter = true)
-    }
 
-    private fun importBatchTxtInternal(txtContent: String, enterMainAfter: Boolean) {
+    fun openMediaDetails(channel: ChannelEntity, allSeriesItems: List<ChannelEntity> = emptyList()) {
+        val isSeries = channel.contentType.equals("SERIES", ignoreCase = true)
+        val dlKey = "vod_${channel.remoteId ?: channel.id}"
+        _uiState.update {
+            it.copy(
+                isLoadingMediaDetails = true,
+                selectedMediaDetails = null,
+                selectedMovieDownloadKey = dlKey,
+                seasonsMap = emptyMap(),
+                selectedSeriesTitle = if (isSeries) channel.title else "",
+                errorMessage = null
+            )
+        }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, loadingProgress = 0.4f, loadingStage = "Importando lista TXT...") }
-            val targetProfile = withContext(Dispatchers.IO) {
-                val current = activeProfile ?: run {
-                    val id = profileDao.insert(
-                        ProfileEntity(name = "Lista Personalizada", heroAvatar = "FLASH", sourceType = "TXT")
-                    )
-                    profileDao.getById(id)!!
+            val profile = activeProfile
+            if (isSeries) {
+                val (details, seasons) = if (profile != null && !channel.remoteId.isNullOrBlank() && !profile.server.isNullOrBlank()) {
+                    runCatching { repository.fetchSeriesDetailsAndSeasons(profile, channel) }
+                        .getOrElse {
+                            MediaDetails(
+                                title = channel.title,
+                                plot = "Sinopse não disponível.",
+                                releaseDate = "—",
+                                year = "—",
+                                ratingImdb = "N/A",
+                                duration = "—",
+                                genres = listOf(channel.groupName.ifBlank { "Geral" }),
+                                posterUrl = channel.streamIcon,
+                                backdropUrl = channel.streamIcon,
+                                streamUrl = null,
+                                contentType = "SERIES"
+                            ) to emptyMap()
+                        }
+                } else {
+                    MediaDetails(
+                        title = channel.title,
+                        plot = "Sinopse não disponível para listas M3U simples.",
+                        releaseDate = "—",
+                        year = "—",
+                        ratingImdb = "N/A",
+                        duration = "—",
+                        genres = listOf(channel.groupName.ifBlank { "Geral" }),
+                        posterUrl = channel.streamIcon,
+                        backdropUrl = channel.streamIcon,
+                        streamUrl = null,
+                        contentType = "SERIES"
+                    ) to emptyMap()
                 }
-                val parsed = PlaylistParser.parseM3uOrTxt(txtContent, current.id)
-                channelDao.deleteByProfile(current.id)
-                channelDao.insertAll(parsed)
-                current
-            }
-            activeProfile = targetProfile
-            _activeProfileId.value = targetProfile.id
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    loadingProgress = 1f,
-                    loadingStage = "",
-                    navigateToMainScreen = enterMainAfter
-                )
+
+                val resolvedSeasons = if (seasons.isNotEmpty()) seasons else buildFallbackSeasons(channel, allSeriesItems)
+                _uiState.update {
+                    it.copy(
+                        isLoadingMediaDetails = false,
+                        selectedMediaDetails = details,
+                        seasonsMap = resolvedSeasons
+                    )
+                }
+            } else {
+                val details = if (profile != null) {
+                    runCatching { repository.fetchVodDetails(profile, channel) }
+                        .getOrElse {
+                            MediaDetails(
+                                title = channel.title,
+                                plot = "Sinopse não disponível.",
+                                releaseDate = "—",
+                                year = "—",
+                                ratingImdb = "N/A",
+                                duration = "—",
+                                genres = listOf(channel.groupName.ifBlank { "Geral" }),
+                                posterUrl = channel.streamIcon,
+                                backdropUrl = channel.streamIcon,
+                                streamUrl = channel.url,
+                                contentType = "VOD"
+                            )
+                        }
+                } else {
+                    MediaDetails(
+                        title = channel.title,
+                        plot = "Sinopse não disponível.",
+                        releaseDate = "—",
+                        year = "—",
+                        ratingImdb = "N/A",
+                        duration = "—",
+                        genres = listOf(channel.groupName.ifBlank { "Geral" }),
+                        posterUrl = channel.streamIcon,
+                        backdropUrl = channel.streamIcon,
+                        streamUrl = channel.url,
+                        contentType = "VOD"
+                    )
+                }
+
+                val existing = downloadManager.checkExistingFile(dlKey, details.title, details.extension)
+                if (existing.isCompleted) {
+                    // Refresh state map if file exists on disk
+                    downloadManager.checkExistingFile(dlKey, details.title, details.extension)
+                }
+
+                _uiState.update {
+                    it.copy(
+                        isLoadingMediaDetails = false,
+                        selectedMediaDetails = details
+                    )
+                }
             }
         }
     }
 
-    fun confirmPendingHeroList() {
-        val url = pendingHeroUrl
-        _uiState.update { it.copy(pendingHeroMessage = null) }
-        loadHeroListFromGithub(url, force = true)
+    private fun buildFallbackSeasons(
+        seriesChannel: ChannelEntity,
+        allSeriesItems: List<ChannelEntity>
+    ): Map<String, List<SeriesEpisode>> {
+        val baseName = extractSeriesBaseTitle(seriesChannel.title)
+        val matching = allSeriesItems.filter {
+            extractSeriesBaseTitle(it.title).equals(baseName, ignoreCase = true)
+        }.ifEmpty { listOf(seriesChannel) }
+
+        val grouped = linkedMapOf<String, MutableList<SeriesEpisode>>()
+        val seRegex = Regex("(?i)(?:S|T)(\\d{1,2})\\s*(?:E|EP)?(\\d{1,3})")
+        matching.forEachIndexed { idx, item ->
+            val m = seRegex.find(item.title)
+            val seasonKey = m?.groupValues?.getOrNull(1)?.toIntOrNull()?.toString() ?: "1"
+            val epNum = m?.groupValues?.getOrNull(2)?.toIntOrNull() ?: (idx + 1)
+            val ext = item.url.substringAfterLast('.', "mp4").substringBefore('?').takeIf { it.length in 2..5 } ?: "mp4"
+            grouped.getOrPut(seasonKey) { mutableListOf() }.add(
+                SeriesEpisode(
+                    id = "DIRECT_URL::${item.url}",
+                    episodeNum = epNum,
+                    title = item.title,
+                    extension = ext,
+                    duration = null
+                )
+            )
+        }
+        return grouped.mapValues { (_, list) -> list.sortedBy { it.episodeNum } }
     }
 
-    fun dismissPendingHeroList() {
-        _uiState.update { it.copy(pendingHeroMessage = null) }
+    fun downloadSelectedMovie() {
+        val details = _uiState.value.selectedMediaDetails ?: return
+        val key = _uiState.value.selectedMovieDownloadKey
+        val url = details.streamUrl ?: return
+        viewModelScope.launch {
+            downloadManager.downloadMedia(key = key, title = details.title, url = url, extension = details.extension)
+        }
     }
 
-    fun setStreamUrl(url: String?, title: String) {
+    fun deleteSelectedMovieOffline() {
+        val details = _uiState.value.selectedMediaDetails ?: return
+        val key = _uiState.value.selectedMovieDownloadKey
+        downloadManager.deleteOfflineFile(key = key, title = details.title, extension = details.extension)
+    }
+
+    fun getMovieOfflineState(): OfflineDownloadState {
+        val details = _uiState.value.selectedMediaDetails ?: return OfflineDownloadState()
+        val key = _uiState.value.selectedMovieDownloadKey
+        return downloadStates.value[key] ?: downloadManager.checkExistingFile(key, details.title, details.extension)
+    }
+
+    fun downloadEpisode(episode: SeriesEpisode) {
+        val url = buildEpisodeStreamUrl(episode) ?: return
+        val key = "ep_${episode.id}"
+        viewModelScope.launch {
+            downloadManager.downloadMedia(key = key, title = episode.title, url = url, extension = episode.extension)
+        }
+    }
+
+    fun deleteEpisodeOffline(episode: SeriesEpisode) {
+        downloadManager.deleteOfflineFile(key = "ep_${episode.id}", title = episode.title, extension = episode.extension)
+    }
+
+    fun checkEpisodeOffline(episode: SeriesEpisode): OfflineDownloadState {
+        val key = "ep_${episode.id}"
+        return downloadStates.value[key] ?: downloadManager.checkExistingFile(key, episode.title, episode.extension)
+    }
+
+    fun closeSeriesSeasons() {
+        _uiState.update { it.copy(seasonsMap = emptyMap(), selectedSeriesTitle = "", isLoadingSeasons = false) }
+    }
+
+    fun buildEpisodeStreamUrl(episode: SeriesEpisode): String? {
+        if (episode.id.startsWith("DIRECT_URL::")) {
+            return episode.id.removePrefix("DIRECT_URL::")
+        }
+        val profile = activeProfile ?: return null
+        val cleanServer = profile.server?.trimEnd('/') ?: return null
+        val encUser = URLEncoder.encode(profile.user.orEmpty(), "UTF-8")
+        val encPass = URLEncoder.encode(profile.pass.orEmpty(), "UTF-8")
+        return "$cleanServer/series/$encUser/$encPass/${episode.id}.${episode.extension}"
+    }
+
+    fun exportProfilesText(currentProfiles: List<ProfileEntity>): String {
+        return repository.formatProfilesExportTxt(currentProfiles)
+    }
+
+    fun setStreamUrl(url: String?, title: String = "") {
         _uiState.update {
             it.copy(
                 currentStreamUrl = url,
-                currentChannelTitle = title
+                currentChannelTitle = title,
+                playbackIndex = if (url.isNullOrBlank()) -1 else it.playbackIndex
             )
         }
     }
@@ -380,136 +753,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         titles: List<String>,
         urls: List<String>,
         remoteIds: List<String?> = emptyList(),
-        startIndex: Int = 0,
-        tab: String = "CANAIS",
-        category: String = "",
-        search: String = ""
-    ) {
-        val safeIndex = startIndex.coerceIn(0, (urls.size - 1).coerceAtLeast(0))
-        _uiState.update {
-            it.copy(
-                playlistTitles = titles,
-                playlistUrls = urls,
-                playlistRemoteIds = remoteIds,
-                playlistCurrentIndex = safeIndex,
-                currentStreamUrl = urls.getOrNull(safeIndex),
-                currentChannelTitle = titles.getOrNull(safeIndex).orEmpty(),
-                lastSelectedTab = tab,
-                lastSelectedCategory = category,
-                lastSearchQuery = search
-            )
-        }
-    }
-
-    fun switchPlaylistIndex(newIndex: Int) {
-        val urls = _uiState.value.playlistUrls
-        val titles = _uiState.value.playlistTitles
-        if (newIndex in urls.indices) {
-            _uiState.update {
-                it.copy(
-                    playlistCurrentIndex = newIndex,
-                    currentStreamUrl = urls[newIndex],
-                    currentChannelTitle = titles.getOrNull(newIndex).orEmpty()
-                )
-            }
-        }
-    }
-
-    fun saveNavigationHistory(
+        startIndex: Int,
         tab: String,
         category: String,
-        search: String,
-        focusedIndex: Int,
-        openedTitle: String = _uiState.value.lastOpenedChannelTitle
+        search: String
     ) {
+        if (urls.isEmpty() || startIndex !in urls.indices) return
+        val targetUrl = urls[startIndex]
+        val targetTitle = titles.getOrElse(startIndex) { "Canal ${startIndex + 1}" }
+        val targetRemoteId = remoteIds.getOrNull(startIndex)
+        saveNavigationHistory(
+            tab = tab,
+            category = category,
+            search = search,
+            focusedIndex = startIndex,
+            openedTitle = targetTitle
+        )
         _uiState.update {
             it.copy(
-                lastSelectedTab = tab,
-                lastSelectedCategory = category,
-                lastSearchQuery = search,
-                lastFocusedIndex = focusedIndex,
-                lastOpenedChannelTitle = openedTitle
+                currentStreamUrl = targetUrl,
+                currentChannelTitle = targetTitle,
+                playbackPlaylistTitles = titles,
+                playbackPlaylistUrls = urls,
+                playbackPlaylistRemoteIds = remoteIds,
+                playbackIndex = startIndex,
+                currentEpgItems = emptyList()
             )
         }
+        refreshEpgForCurrentStream(targetUrl, targetRemoteId, targetTitle)
     }
 
-    fun openMediaDetails(channel: ChannelEntity, allTabChannels: List<ChannelEntity>) {
-        val related = allTabChannels
-            .filter { it.id != channel.id && it.groupName.equals(channel.groupName, ignoreCase = true) }
-            .take(12)
+    fun stepChannel(delta: Int): Boolean {
+        val urls = _uiState.value.playbackPlaylistUrls
+        val titles = _uiState.value.playbackPlaylistTitles
+        val remoteIds = _uiState.value.playbackPlaylistRemoteIds
+        val curIdx = _uiState.value.playbackIndex
+        if (urls.isEmpty() || curIdx !in urls.indices) return false
+        val nextIdx = (curIdx + delta + urls.size) % urls.size
+        val nextUrl = urls[nextIdx]
+        val nextTitle = titles.getOrElse(nextIdx) { "Canal ${nextIdx + 1}" }
+        val nextRemoteId = remoteIds.getOrNull(nextIdx)
+        saveNavigationHistory(
+            tab = _uiState.value.lastSelectedTab,
+            category = _uiState.value.lastSelectedCategory,
+            search = _uiState.value.lastSearchQuery,
+            focusedIndex = nextIdx,
+            openedTitle = nextTitle
+        )
         _uiState.update {
             it.copy(
-                selectedMediaChannel = channel,
-                relatedChannels = related
+                currentStreamUrl = nextUrl,
+                currentChannelTitle = nextTitle,
+                playbackIndex = nextIdx,
+                currentEpgItems = emptyList()
             )
         }
-        if (channel.contentType.equals("SERIES", ignoreCase = true)) {
-            loadSeriesSeasons(channel)
-        } else {
-            _uiState.update { it.copy(selectedSeriesTitle = "", seasonsMap = emptyMap()) }
-        }
+        refreshEpgForCurrentStream(nextUrl, nextRemoteId, nextTitle)
+        return true
     }
 
-    fun loadSeriesSeasons(channel: ChannelEntity) {
-        val profile = activeProfile
-        val seriesId = channel.remoteId
-        if (profile == null || profile.sourceType != "XTREAM" || seriesId.isNullOrBlank()) {
-            _uiState.update {
-                it.copy(
-                    selectedSeriesTitle = channel.title,
-                    isLoadingSeasons = false,
-                    seasonsMap = emptyMap(),
-                    errorMessage = "Temporadas disponíveis apenas para contas Xtream."
-                )
-            }
+    fun refreshEpgForCurrentStream(
+        streamUrl: String?,
+        remoteId: String? = null,
+        channelTitle: String = ""
+    ) {
+        if (streamUrl.isNullOrBlank()) {
+            _uiState.update { it.copy(currentEpgItems = emptyList(), isLoadingEpg = false) }
             return
         }
+        _uiState.update { it.copy(isLoadingEpg = true) }
         viewModelScope.launch {
+            val items = repository.fetchShortEpg(activeProfile, streamUrl, remoteId, channelTitle)
             _uiState.update {
                 it.copy(
-                    selectedSeriesTitle = channel.title,
-                    isLoadingSeasons = true,
-                    seasonsMap = emptyMap(),
-                    errorMessage = null
-                )
-            }
-            val map = withContext(Dispatchers.IO) {
-                runCatching {
-                    PlaylistParser.fetchSeriesSeasons(
-                        profile.urlOrServer,
-                        profile.username,
-                        profile.password,
-                        seriesId
-                    )
-                }.getOrDefault(emptyMap())
-            }
-            _uiState.update {
-                it.copy(
-                    isLoadingSeasons = false,
-                    seasonsMap = map
+                    currentEpgItems = items,
+                    isLoadingEpg = false
                 )
             }
         }
     }
+}
 
-    fun closeSeriesSeasons() {
-        _uiState.update {
-            it.copy(
-                selectedSeriesTitle = "",
-                isLoadingSeasons = false,
-                seasonsMap = emptyMap()
-            )
+class MainViewModelFactory(
+    private val repository: IptvRepository,
+    private val context: Context
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
+            return MainViewModel(repository, context.applicationContext) as T
         }
-    }
-
-    fun buildEpisodeStreamUrl(episode: SeriesEpisode): String? {
-        val profile = activeProfile ?: return null
-        if (profile.urlOrServer.isBlank() || episode.id.isBlank()) return null
-        val clean = profile.urlOrServer.trim().trimEnd('/')
-        return "$clean/series/${profile.username}/${profile.password}/${episode.id}.${episode.containerExtension}"
-    }
-
-    companion object {
-        const val DEFAULT_HERO_URL = "https://raw.githubusercontent.com/NOSLIUDE/IPTVHeroProTV/main/lista.m3u"
+        throw IllegalArgumentException("Classe ViewModel desconhecida: ${modelClass.name}")
     }
 }

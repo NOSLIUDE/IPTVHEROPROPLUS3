@@ -1,5 +1,6 @@
 package com.iptvhero.pro.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -282,6 +284,7 @@ fun MainScreen(
             .background(currentTheme.backgroundBrush)
             .padding(12.dp)
     ) {
+        // ZONA 1: TOPO (Título + Perfis, Proxy, Tema)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -347,6 +350,7 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // ZONA 2: ABAS (Canais, Filmes, Séries) + Barra de Pesquisa com fonte ajustada sem cortes
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -435,6 +439,7 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // ZONA 3: CORPO PRINCIPAL (Categorias à Esquerda + Grade de Covers + Barra de Rolagem à Direita)
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -816,6 +821,7 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // ZONA 4: RODAPÉ (HERO LISTA, Atualizar, STOP, Conexões Ativas, FULL)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1107,18 +1113,18 @@ fun MainScreen(
             profiles = profiles,
             activeProfileId = activeProfile?.id,
             onDismiss = { showProfileDialog = false },
-            onActivateProfile = { viewModel.selectProfileAndEnterApp(it) },
+            onActivateProfile = { viewModel.selectProfile(it) },
             onDeleteProfile = { viewModel.deleteProfile(it) },
             onImportContent = { txtContent ->
-                viewModel.importBatchTxtAndEnterApp(txtContent)
+                viewModel.importBatchTxt(txtContent)
                 showProfileDialog = false
             },
             onImportGithubHero = { url ->
-                viewModel.loadHeroListAndEnterApp(url)
+                viewModel.loadHeroListFromGithub(url)
                 showProfileDialog = false
             },
             onImportXtream = { server, user, pass ->
-                viewModel.importXtreamAndEnterApp(server, user, pass)
+                viewModel.importXtream(server, user, pass)
                 showProfileDialog = false
             }
         )

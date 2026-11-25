@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "IPTVHeroProPlus2"
+rootProject.name = "IPTVHeroProTV"
 include(":app")
