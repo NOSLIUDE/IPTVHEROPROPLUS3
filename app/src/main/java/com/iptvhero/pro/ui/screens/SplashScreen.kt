@@ -117,6 +117,43 @@ fun SplashScreen(
                 )
             }
 
+            // Descrição LIVE • VOD • SERIES centralizada no topo
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xE60A0E1A))
+                    .border(2.5.dp, comicInk, RoundedCornerShape(8.dp))
+                    .border(1.dp, DcCyan.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "LIVE",
+                    color = MarvelYellow,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                )
+                Text("•", color = TextDim, fontSize = 11.sp)
+                Text(
+                    text = "VOD",
+                    color = DcCyan,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                )
+                Text("•", color = TextDim, fontSize = 11.sp)
+                Text(
+                    text = "SERIES",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.5.sp
+                )
+            }
+
             // Balão de impacto no canto superior direito
             Box(
                 modifier = Modifier
@@ -135,73 +172,6 @@ fun SplashScreen(
                     fontSize = 12.sp,
                     letterSpacing = 1.sp
                 )
-            }
-
-            // Textos centrais (sem splash_logo e sem raios/quadros ao redor)
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .rotate(-1.5f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(MarvelRed, Color(0xE6141B2E), DcBlue)
-                            )
-                        )
-                        .border(3.5.dp, comicInk, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 24.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        text = "IPTV HERO PRO+",
-                        color = MarvelYellow,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 28.sp,
-                        letterSpacing = 3.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xE60A0E1A))
-                        .border(2.5.dp, comicInk, RoundedCornerShape(8.dp))
-                        .border(1.dp, DcCyan.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "LIVE TV",
-                        color = MarvelYellow,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.5.sp
-                    )
-                    Text("•", color = TextDim, fontSize = 11.sp)
-                    Text(
-                        text = "MOVIES",
-                        color = DcCyan,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.5.sp
-                    )
-                    Text("•", color = TextDim, fontSize = 11.sp)
-                    Text(
-                        text = "SERIES",
-                        color = TextPrimary,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.5.sp
-                    )
-                }
             }
 
             // Rodapé com legenda de status e barra de progresso
