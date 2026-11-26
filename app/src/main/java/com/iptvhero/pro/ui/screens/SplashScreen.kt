@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -32,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -45,14 +42,10 @@ import androidx.compose.ui.unit.sp
 import com.iptvhero.pro.R
 import com.iptvhero.pro.ui.theme.DcBlue
 import com.iptvhero.pro.ui.theme.DcCyan
-import com.iptvhero.pro.ui.theme.GoldFocus
 import com.iptvhero.pro.ui.theme.MarvelRed
 import com.iptvhero.pro.ui.theme.MarvelYellow
 import com.iptvhero.pro.ui.theme.TextDim
 import com.iptvhero.pro.ui.theme.TextPrimary
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun SplashScreen(
@@ -69,65 +62,43 @@ fun SplashScreen(
         animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
         label = "badge_scale"
     )
-    val burstAngle by infiniteTransition.animateFloat(
-        initialValue = -2f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
-        label = "burst_angle"
-    )
 
     val comicInk = Color(0xFF06070C)
-    val halftoneDot = Color.White.copy(alpha = 0.08f)
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF1A070C),
-                        Color(0xFF080A14),
-                        Color(0xFF07162E)
-                    )
-                )
-            )
-            .padding(18.dp),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val step = 18.dp.toPx()
-            val radius = 1.7.dp.toPx()
-            var y = step * 0.5f
-            while (y < size.height) {
-                var x = step * 0.5f
-                while (x < size.width) {
-                    drawCircle(
-                        color = halftoneDot,
-                        radius = radius,
-                        center = Offset(x, y)
-                    )
-                    x += step
-                }
-                y += step
-            }
-        }
+        // Imagem splash_background cobrindo 100% da tela
+        Image(
+            painter = painterResource(id = R.drawable.splash_background),
+            contentDescription = "IPTV Hero Pro Background",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
 
+        // Camada sutil de contraste para garantir leitura dos textos sobre a imagem
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(18.dp))
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xE6111524),
-                            Color(0xF2080B14)
+                            Color(0x5506070C),
+                            Color(0x3306070C),
+                            Color(0x8806070C)
                         )
                     )
                 )
-                .border(4.dp, comicInk, RoundedCornerShape(18.dp))
-                .border(1.5.dp, MarvelYellow.copy(alpha = 0.75f), RoundedCornerShape(18.dp))
-                .padding(20.dp)
+        )
+
+        // Conteúdo textual e barra de progresso sobre o background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
         ) {
+            // Selo de edição no canto superior esquerdo
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -146,6 +117,7 @@ fun SplashScreen(
                 )
             }
 
+            // Balão de impacto no canto superior direito
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -165,72 +137,21 @@ fun SplashScreen(
                 )
             }
 
+            // Textos centrais (sem splash_logo e sem raios/quadros ao redor)
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    modifier = Modifier.size(220.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .rotate(burstAngle)
-                    ) {
-                        val center = Offset(size.width / 2f, size.height / 2f)
-                        val rays = 24
-                        val innerR = size.minDimension * 0.24f
-                        val outerR = size.minDimension * 0.50f
-                        for (i in 0 until rays) {
-                            val angle = (i * (360f / rays)) * (PI / 180.0)
-                            val start = Offset(
-                                center.x + (cos(angle) * innerR).toFloat(),
-                                center.y + (sin(angle) * innerR).toFloat()
-                            )
-                            val end = Offset(
-                                center.x + (cos(angle) * outerR).toFloat(),
-                                center.y + (sin(angle) * outerR).toFloat()
-                            )
-                            drawLine(
-                                color = if (i % 2 == 0) MarvelYellow.copy(alpha = 0.28f) else DcCyan.copy(alpha = 0.22f),
-                                start = start,
-                                end = end,
-                                strokeWidth = 3.dp.toPx()
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(156.dp)
-                            .scale(badgeScale)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFF0C101D))
-                            .border(4.dp, comicInk, RoundedCornerShape(18.dp))
-                            .border(2.dp, GoldFocus, RoundedCornerShape(18.dp))
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.splash_logo),
-                            contentDescription = "IPTV Hero Pro Splash Logo",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-
                 Box(
                     modifier = Modifier
                         .rotate(-1.5f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(
                             Brush.horizontalGradient(
-                                listOf(MarvelRed, Color(0xFF141B2E), DcBlue)
+                                listOf(MarvelRed, Color(0xE6141B2E), DcBlue)
                             )
                         )
                         .border(3.5.dp, comicInk, RoundedCornerShape(10.dp))
@@ -250,7 +171,7 @@ fun SplashScreen(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0A0E1A))
+                        .background(Color(0xE60A0E1A))
                         .border(2.5.dp, comicInk, RoundedCornerShape(8.dp))
                         .border(1.dp, DcCyan.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 16.dp, vertical = 6.dp),
@@ -283,6 +204,7 @@ fun SplashScreen(
                 }
             }
 
+            // Rodapé com legenda de status e barra de progresso
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -319,7 +241,7 @@ fun SplashScreen(
                             .clip(RoundedCornerShape(6.dp))
                             .border(1.5.dp, comicInk, RoundedCornerShape(6.dp)),
                         color = MarvelYellow,
-                        trackColor = Color.White.copy(alpha = 0.14f)
+                        trackColor = Color.White.copy(alpha = 0.24f)
                     )
                 } else {
                     Row(
