@@ -2,6 +2,7 @@ package com.iptvhero.pro.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -22,7 +23,7 @@ fun AppNavigation(
     viewModel: MainViewModel,
     onExitApp: () -> Unit = {}
 ) {
-    var currentScreen by remember { mutableStateOf("splash") }
+    var currentScreen by remember { mutableStateOf("profiles") }
     var currentTheme by remember { mutableStateOf(HeroThemeType.DUEL) }
     val navigationHistory = remember { mutableStateListOf<String>() }
 
@@ -34,6 +35,15 @@ fun AppNavigation(
     val uiState by viewModel.uiState.collectAsState()
     val downloadStates by viewModel.downloadStates.collectAsState()
 
+    var wasShowingSplash by remember { mutableStateOf(uiState.showSplashScreen) }
+
+    LaunchedEffect(uiState.showSplashScreen) {
+        if (wasShowingSplash && !uiState.showSplashScreen && currentScreen != "main") {
+            currentScreen = "profiles"
+        }
+        wasShowingSplash = uiState.showSplashScreen
+    }
+
     fun navigateTo(targetScreen: String) {
         if (targetScreen != currentScreen) {
             navigationHistory.add(currentScreen)
@@ -44,6 +54,9 @@ fun AppNavigation(
     }
 
     fun handleBackAction(): Boolean {
+        if (uiState.showSplashScreen) {
+            return true
+        }
         if (currentScreen == "player") {
             val prev = if (navigationHistory.isNotEmpty()) navigationHistory.removeAt(navigationHistory.lastIndex) else "main"
             currentScreen = if (prev == "details") "details" else "main"
@@ -85,7 +98,7 @@ fun AppNavigation(
         return true
     }
 
-    BackHandler(enabled = currentScreen != "splash") {
+    BackHandler(enabled = true) {
         handleBackAction()
     }
 
@@ -94,23 +107,20 @@ fun AppNavigation(
         currentTheme = values[(currentTheme.ordinal + 1) % values.size]
     }
 
-    val statusText = uiState.errorMessage ?: uiState.successMessage
-
-    if (currentScreen == "splash" || uiState.isHeroSplashActive) {
+    if (uiState.showSplashScreen) {
         SplashScreen(
-            statusText = uiState.heroSplashMessage.uppercase(),
-            waitForHeroLoad = !viewModel.hasSavedHeroHash(),
-            onStartInitialHeroLoad = {
-                viewModel.loadHeroListFromGithub()
-            },
-            onFinished = {
-                if (!uiState.isHeroSplashActive && currentScreen == "splash") {
-                    currentScreen = "profiles"
-                }
-            }
+            statusText = uiState.splashStatusText,
+            progress = uiState.splashProgress,
+            errorMessage = uiState.splashErrorMessage,
+            onRetry = { viewModel.runStartupHeroFlow() },
+            onContinueOffline = if (profiles.isNotEmpty()) {
+                { viewModel.dismissSplashIfPossible() }
+            } else null
         )
         return
     }
+
+    val statusText = uiState.errorMessage ?: uiState.successMessage
 
     when (currentScreen) {
         "profiles" -> {
@@ -133,7 +143,7 @@ fun AppNavigation(
                 },
                 onSelectProfile = { profileId ->
                     viewModel.selectProfile(profileId) {
-                        navigateTo("main")
+                        currentScreen = "main"
                     }
                 },
                 onDeleteProfile = { profileId ->

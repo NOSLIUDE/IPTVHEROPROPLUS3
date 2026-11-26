@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
@@ -59,8 +60,11 @@ data class MainUiState(
     val playbackIndex: Int = -1,
     val currentEpgItems: List<EpgProgramItem> = emptyList(),
     val isLoadingEpg: Boolean = false,
-    val isHeroSplashActive: Boolean = false,
-    val heroSplashMessage: String = "Carregando Hero Lista..."
+    // SplashScreen: ativa na 1ª inicialização e quando há atualização da Hero Lista até criar os perfis
+    val showSplashScreen: Boolean = true,
+    val splashStatusText: String = "Preparando Hero Lista...",
+    val splashProgress: Float = 0.05f,
+    val splashErrorMessage: String? = null
 )
 
 class MainViewModel(
@@ -93,23 +97,146 @@ class MainViewModel(
         val savedSearch = prefs.getString("last_search_query", "") ?: ""
         val savedIndex = prefs.getInt("last_focused_index", 0)
         val savedTitle = prefs.getString("last_opened_channel_title", "") ?: ""
-        val hasHeroHash = !prefs.getString("hero_list_hash", null).isNullOrBlank()
         _uiState.update {
             it.copy(
                 lastSelectedTab = savedTab,
                 lastSelectedCategory = savedCat,
                 lastSearchQuery = savedSearch,
                 lastFocusedIndex = savedIndex,
-                lastOpenedChannelTitle = savedTitle,
-                isHeroSplashActive = !hasHeroHash,
-                heroSplashMessage = if (!hasHeroHash) {
-                    "Carregando Hero Lista pela primeira vez..."
-                } else {
-                    "Carregando universo..."
-                }
+                lastOpenedChannelTitle = savedTitle
             )
         }
-        loadActiveProfile()
+        runStartupHeroFlow()
+    }
+
+
+    fun runStartupHeroFlow() {
+        viewModelScope.launch {
+            val savedHash = prefs.getString("hero_list_hash", null)
+            val existingProfiles = runCatching { repository.allProfiles.first() }.getOrDefault(emptyList())
+            val isFirstLaunch = savedHash.isNullOrBlank() || existingProfiles.isEmpty()
+
+            _uiState.update {
+                it.copy(
+                    showSplashScreen = true,
+                    splashErrorMessage = null,
+                    splashProgress = 0.10f,
+                    splashStatusText = if (isFirstLaunch) {
+                        "Primeira inicialização: carregando Hero Lista..."
+                    } else {
+                        "Verificando atualização da Hero Lista..."
+                    }
+                )
+            }
+
+            try {
+                val (rawText, urls) = repository.fetchHeroListRaw(IptvRepository.HERO_LIST_URL)
+                val newHash = repository.sha256Hex(rawText)
+                val hasUpdate = savedHash != null && savedHash != newHash
+
+                if (isFirstLaunch || hasUpdate) {
+                    _uiState.update {
+                        it.copy(
+                            showSplashScreen = true,
+                            splashProgress = 0.20f,
+                            splashStatusText = if (isFirstLaunch) {
+                                "Processando ${urls.size} listas e criando perfis..."
+                            } else {
+                                "Atualização da Hero Lista detectada! Processando ${urls.size} listas..."
+                            }
+                        )
+                    }
+                    processHeroAndCreateProfilesOnSplash(urls = urls, hash = newHash)
+                } else {
+                    val active = repository.getActiveProfile() ?: existingProfiles.firstOrNull()
+                    activeProfile = active
+                    activeProfileIdFlow.value = active?.id
+                    _uiState.update {
+                        it.copy(
+                            showSplashScreen = false,
+                            splashProgress = 1f,
+                            splashErrorMessage = null
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val active = repository.getActiveProfile() ?: existingProfiles.firstOrNull()
+                activeProfile = active
+                activeProfileIdFlow.value = active?.id
+
+                if (!isFirstLaunch && existingProfiles.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            showSplashScreen = false,
+                            splashErrorMessage = null,
+                            errorMessage = "Não foi possível verificar atualização da Hero Lista agora: ${e.message ?: "Falha de rede"}"
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            showSplashScreen = true,
+                            splashErrorMessage = "Falha ao carregar Hero Lista: ${e.message ?: "Verifique a conexão"}"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun processHeroAndCreateProfilesOnSplash(urls: List<String>, hash: String) {
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                splashErrorMessage = null,
+                showSplashScreen = true,
+                splashProgress = 0.20f,
+                splashStatusText = "Processando ${urls.size} listas e criando perfis..."
+            )
+        }
+
+        val (ok, fail) = repository.processBulkLines(urls, isHeroOrigin = true) { prog ->
+            val ratio = if (prog.total > 0) prog.current.toFloat() / prog.total.toFloat() else 0f
+            val mappedProgress = (0.20f + (ratio * 0.78f)).coerceIn(0.20f, 0.98f)
+            val status = "Criando perfis: ${prog.current}/${prog.total} (OK: ${prog.success} | Falhas: ${prog.failed})"
+            _uiState.update {
+                it.copy(
+                    bulkProgress = prog,
+                    splashProgress = mappedProgress,
+                    splashStatusText = status,
+                    successMessage = status
+                )
+            }
+        }
+
+        prefs.edit()
+            .putString("hero_list_hash", hash)
+            .putLong("hero_list_checked_at", System.currentTimeMillis())
+            .apply()
+
+        val createdProfiles = runCatching { repository.allProfiles.first() }.getOrDefault(emptyList())
+        val active = repository.getActiveProfile() ?: createdProfiles.firstOrNull()
+        activeProfile = active
+        activeProfileIdFlow.value = active?.id
+
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                bulkProgress = null,
+                showSplashScreen = false,
+                splashProgress = 1f,
+                splashStatusText = "Perfis criados!",
+                splashErrorMessage = null,
+                successMessage = "Hero Lista concluída! Perfis criados: $ok | Falhas: $fail"
+            )
+        }
+    }
+
+    fun dismissSplashIfPossible() {
+        _uiState.update {
+            it.copy(showSplashScreen = false, splashErrorMessage = null)
+        }
     }
 
     fun saveNavigationHistory(
@@ -235,19 +362,10 @@ class MainViewModel(
      * Identico ao loadHeroList() do index_2.html:
      * Baixa o arquivo all_in_one.txt com cache-bust, calcula SHA-256 e compara com a ultima versao.
      */
-    fun hasSavedHeroHash(): Boolean = !prefs.getString("hero_list_hash", null).isNullOrBlank()
-
     fun loadHeroListFromGithub(url: String = IptvRepository.HERO_LIST_URL, force: Boolean = false) {
-        val isFirstRun = !hasSavedHeroHash()
         _uiState.update {
             it.copy(
                 isLoading = true,
-                isHeroSplashActive = isFirstRun || it.isHeroSplashActive,
-                heroSplashMessage = if (isFirstRun) {
-                    "Carregando Hero Lista inicial..."
-                } else {
-                    "Verificando alterações na Hero Lista..."
-                },
                 errorMessage = null,
                 successMessage = "Verificando atualizacoes da Hero Lista..."
             )
@@ -262,7 +380,6 @@ class MainViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            isHeroSplashActive = false,
                             pendingHeroUrls = urls,
                             pendingHeroHash = hash,
                             pendingHeroMessage = "Hero Lista sem alteracoes (${urls.size} listas). Deseja reprocessar mesmo assim?"
@@ -271,18 +388,11 @@ class MainViewModel(
                     return@launch
                 }
 
-                _uiState.update {
-                    it.copy(
-                        isHeroSplashActive = true,
-                        heroSplashMessage = "Atualizando Hero Lista (${urls.size} listas)..."
-                    )
-                }
                 executeHeroBulk(urls, hash)
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        isHeroSplashActive = false,
                         successMessage = null,
                         errorMessage = "Falha Hero Lista: ${e.message ?: e.javaClass.simpleName}"
                     )
@@ -294,68 +404,18 @@ class MainViewModel(
     fun confirmPendingHeroList() {
         val urls = _uiState.value.pendingHeroUrls ?: return
         val hash = _uiState.value.pendingHeroHash.orEmpty()
-        _uiState.update {
-            it.copy(
-                pendingHeroUrls = null,
-                pendingHeroMessage = null,
-                isHeroSplashActive = true,
-                heroSplashMessage = "Reprocessando Hero Lista (${urls.size} listas)..."
-            )
-        }
+        _uiState.update { it.copy(pendingHeroUrls = null, pendingHeroMessage = null) }
         viewModelScope.launch {
-            executeHeroBulk(urls, hash)
+            processHeroAndCreateProfilesOnSplash(urls = urls, hash = hash)
         }
     }
 
     fun dismissPendingHeroList() {
-        _uiState.update {
-            it.copy(
-                pendingHeroUrls = null,
-                pendingHeroMessage = null,
-                isLoading = false,
-                isHeroSplashActive = false
-            )
-        }
+        _uiState.update { it.copy(pendingHeroUrls = null, pendingHeroMessage = null, isLoading = false, showSplashScreen = false) }
     }
 
     private suspend fun executeHeroBulk(urls: List<String>, hash: String) {
-        _uiState.update {
-            it.copy(
-                isLoading = true,
-                isHeroSplashActive = true,
-                heroSplashMessage = "Processando ${urls.size} listas da Hero Lista...",
-                errorMessage = null,
-                successMessage = "Processando ${urls.size} listas da Hero Lista..."
-            )
-        }
-        val (ok, fail) = repository.processBulkLines(urls, isHeroOrigin = true) { prog ->
-            val stageText = "Processando ${prog.current}/${prog.total} (OK: ${prog.success} | Falhas: ${prog.failed})"
-            _uiState.update {
-                it.copy(
-                    bulkProgress = prog,
-                    heroSplashMessage = stageText,
-                    successMessage = stageText
-                )
-            }
-        }
-
-        prefs.edit()
-            .putString("hero_list_hash", hash)
-            .putLong("hero_list_checked_at", System.currentTimeMillis())
-            .apply()
-
-        val active = repository.getActiveProfile()
-        activeProfile = active
-        activeProfileIdFlow.value = active?.id
-
-        _uiState.update {
-            it.copy(
-                isLoading = false,
-                isHeroSplashActive = false,
-                bulkProgress = null,
-                successMessage = "Hero Lista concluida! Criados: $ok | Falhas: $fail"
-            )
-        }
+        processHeroAndCreateProfilesOnSplash(urls = urls, hash = hash)
     }
 
     /**

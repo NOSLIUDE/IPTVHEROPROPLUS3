@@ -17,6 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Impede que a tela da Smart TV / TV Box entre em modo de descanso
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val database = AppDatabase.getDatabase(applicationContext)
@@ -48,5 +49,10 @@ class MainActivity : ComponentActivity() {
                 onExitApp = { finish() }
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }

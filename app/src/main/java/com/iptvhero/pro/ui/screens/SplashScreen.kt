@@ -21,10 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +50,6 @@ import com.iptvhero.pro.ui.theme.MarvelRed
 import com.iptvhero.pro.ui.theme.MarvelYellow
 import com.iptvhero.pro.ui.theme.TextDim
 import com.iptvhero.pro.ui.theme.TextPrimary
-import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -56,19 +57,11 @@ import kotlin.math.sin
 @Composable
 fun SplashScreen(
     statusText: String = "CARREGANDO UNIVERSO...",
-    waitForHeroLoad: Boolean = false,
-    onStartInitialHeroLoad: () -> Unit = {},
-    onFinished: () -> Unit
+    progress: Float = 0.15f,
+    errorMessage: String? = null,
+    onRetry: () -> Unit = {},
+    onContinueOffline: (() -> Unit)? = null
 ) {
-    LaunchedEffect(waitForHeroLoad) {
-        if (waitForHeroLoad) {
-            onStartInitialHeroLoad()
-        } else {
-            delay(900)
-            onFinished()
-        }
-    }
-
     val infiniteTransition = rememberInfiniteTransition(label = "comic_splash")
     val badgeScale by infiniteTransition.animateFloat(
         initialValue = 0.98f,
@@ -101,7 +94,6 @@ fun SplashScreen(
             .padding(18.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Pontilhado estilo halftone de HQ ao fundo
         Canvas(modifier = Modifier.fillMaxSize()) {
             val step = 18.dp.toPx()
             val radius = 1.7.dp.toPx()
@@ -120,7 +112,6 @@ fun SplashScreen(
             }
         }
 
-        // Painel principal estilo capa de revista em quadrinhos com borda nanquim espessa
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -137,7 +128,6 @@ fun SplashScreen(
                 .border(1.5.dp, MarvelYellow.copy(alpha = 0.75f), RoundedCornerShape(18.dp))
                 .padding(20.dp)
         ) {
-            // Selo de edição no canto superior esquerdo
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -156,7 +146,6 @@ fun SplashScreen(
                 )
             }
 
-            // Balão de impacto / ação no canto superior direito
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -176,7 +165,6 @@ fun SplashScreen(
                 )
             }
 
-            // Centro: Raios de ação em HQ + R.drawable.splash_logo + Título em caixa de quadrinhos
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -216,7 +204,6 @@ fun SplashScreen(
                         }
                     }
 
-                    // Logo R.drawable.splash_logo dentro de quadro de HQ
                     Box(
                         modifier = Modifier
                             .size(156.dp)
@@ -237,7 +224,6 @@ fun SplashScreen(
                     }
                 }
 
-                // Placa principal estilo título de revista em quadrinhos
                 Box(
                     modifier = Modifier
                         .rotate(-1.5f)
@@ -261,7 +247,6 @@ fun SplashScreen(
                     )
                 }
 
-                // Faixa de subtítulo em estilo balão/legenda de HQ
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -298,7 +283,6 @@ fun SplashScreen(
                 }
             }
 
-            // Rodapé estilo legenda de quadro de quadrinhos + barra de progresso
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -310,28 +294,60 @@ fun SplashScreen(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MarvelYellow)
+                        .background(if (errorMessage != null) MarvelRed else MarvelYellow)
                         .border(2.5.dp, comicInk, RoundedCornerShape(6.dp))
                         .padding(horizontal = 14.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = statusText,
-                        color = comicInk,
+                        text = errorMessage ?: statusText.uppercase(),
+                        color = if (errorMessage != null) Color.White else comicInk,
                         fontWeight = FontWeight.Black,
                         fontSize = 11.sp,
-                        letterSpacing = 1.4.sp
+                        letterSpacing = 1.1.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .width(280.dp)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .border(1.5.dp, comicInk, RoundedCornerShape(6.dp)),
-                    color = MarvelYellow,
-                    trackColor = Color.White.copy(alpha = 0.14f)
-                )
+                if (errorMessage == null) {
+                    LinearProgressIndicator(
+                        progress = { progress.coerceIn(0.02f, 1f) },
+                        modifier = Modifier
+                            .width(300.dp)
+                            .height(7.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(1.5.dp, comicInk, RoundedCornerShape(6.dp)),
+                        color = MarvelYellow,
+                        trackColor = Color.White.copy(alpha = 0.14f)
+                    )
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = onRetry,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MarvelYellow,
+                                contentColor = comicInk
+                            )
+                        ) {
+                            Text("Tentar novamente", fontWeight = FontWeight.Black)
+                        }
+                        if (onContinueOffline != null) {
+                            Button(
+                                onClick = onContinueOffline,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DcBlue,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Text("Abrir perfis", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
