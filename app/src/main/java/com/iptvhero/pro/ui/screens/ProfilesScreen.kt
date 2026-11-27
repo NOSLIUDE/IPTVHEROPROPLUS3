@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,46 +57,59 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 
-private val HeroProfileAssets: List<Pair<String, String>> = listOf(
-    "batman" to "batman.png",
-    "capitao-america" to "capitao-america.png",
-    "homem-aranha" to "homem-aranha.png",
-    "homem-de-ferro" to "homem-de-ferro.png",
-    "lanterna-verde" to "lanterna-verde.png",
-    "mulher-maravilha" to "mulher-maravilha.png",
-    "shazam" to "shazam.png",
-    "super-homem" to "super-homem.png",
-    "thor" to "thor.png",
-    "wolverine" to "wolverine.png",
-    "aranha-de-ferro" to "aranha-de-ferro.png",
-    "dentinho" to "dentinho.png",
-    "garota-aranha" to "garota-aranha.png",
-    "hulk" to "hulk.png",
-    "jessica-jones" to "jessica-jones.png",
-    "mulher-hulk" to "mulher-hulk.png",
-    "nova" to "nova.png",
-    "pantera-negra" to "pantera-negra.png",
-    "soldado-invernal" to "soldado-invernal.png",
-    "thor_2" to "thor_2.png",
-    "doutor-estranho" to "doutor-estranho.png",
-    "elektra" to "elektra.png",
-    "gaviao-arqueiro" to "gaviao-arqueiro.png",
-    "maquina-de-combate" to "maquina-de-combate.png",
-    "motoqueiro-fantasma" to "motoqueiro-fantasma.png",
-    "mulher-aranha" to "mulher-aranha.png",
-    "mulher-escarlate" to "mulher-escarlate.png",
-    "nick-fury" to "nick-fury.png",
-    "punho-de-ferro" to "punho-de-ferro.png",
-    "vespa" to "vespa.png",
-    "arqueiro-verde" to "arqueiro-verde.png",
-    "arsenal" to "arsenal.png",
-    "batman_2" to "batman_2.png",
-    "canario-negro" to "canario-negro.png",
-    "flash" to "flash.png",
-    "iris-west" to "iris-west.png",
-    "lois-lane" to "lois-lane.png",
-    "mulher-gato" to "mulher-gato.png",
-    "mulher-maravilha_2" to "mulher-maravilha_2.png"
+private data class HeroCharacterEntry(
+    val key: String,
+    val fileName: String,
+    val isMarvel: Boolean
+)
+
+private val HeroProfileCatalog: List<HeroCharacterEntry> = listOf(
+    // Lote 1
+    HeroCharacterEntry("batman", "batman.png", isMarvel = false),
+    HeroCharacterEntry("capitao-america", "capitao-america.png", isMarvel = true),
+    HeroCharacterEntry("homem-aranha", "homem-aranha.png", isMarvel = true),
+    HeroCharacterEntry("homem-de-ferro", "homem-de-ferro.png", isMarvel = true),
+    HeroCharacterEntry("lanterna-verde", "lanterna-verde.png", isMarvel = false),
+    HeroCharacterEntry("mulher-maravilha", "mulher-maravilha.png", isMarvel = false),
+    HeroCharacterEntry("shazam", "shazam.png", isMarvel = false),
+    HeroCharacterEntry("super-homem", "super-homem.png", isMarvel = false),
+    HeroCharacterEntry("thor", "thor.png", isMarvel = true),
+    HeroCharacterEntry("wolverine", "wolverine.png", isMarvel = true),
+
+    // Lote 2
+    HeroCharacterEntry("aranha-de-ferro", "aranha-de-ferro.png", isMarvel = true),
+    HeroCharacterEntry("dentinho", "dentinho.png", isMarvel = true),
+    HeroCharacterEntry("garota-aranha", "garota-aranha.png", isMarvel = true),
+    HeroCharacterEntry("hulk", "hulk.png", isMarvel = true),
+    HeroCharacterEntry("jessica-jones", "jessica-jones.png", isMarvel = true),
+    HeroCharacterEntry("mulher-hulk", "mulher-hulk.png", isMarvel = true),
+    HeroCharacterEntry("nova", "nova.png", isMarvel = true),
+    HeroCharacterEntry("pantera-negra", "pantera-negra.png", isMarvel = true),
+    HeroCharacterEntry("soldado-invernal", "soldado-invernal.png", isMarvel = true),
+    HeroCharacterEntry("thor_2", "thor_2.png", isMarvel = true),
+
+    // Lote 3
+    HeroCharacterEntry("doutor-estranho", "doutor-estranho.png", isMarvel = true),
+    HeroCharacterEntry("elektra", "elektra.png", isMarvel = true),
+    HeroCharacterEntry("gaviao-arqueiro", "gaviao-arqueiro.png", isMarvel = true),
+    HeroCharacterEntry("maquina-de-combate", "maquina-de-combate.png", isMarvel = true),
+    HeroCharacterEntry("motoqueiro-fantasma", "motoqueiro-fantasma.png", isMarvel = true),
+    HeroCharacterEntry("mulher-aranha", "mulher-aranha.png", isMarvel = true),
+    HeroCharacterEntry("mulher-escarlate", "mulher-escarlate.png", isMarvel = true),
+    HeroCharacterEntry("nick-fury", "nick-fury.png", isMarvel = true),
+    HeroCharacterEntry("punho-de-ferro", "punho-de-ferro.png", isMarvel = true),
+    HeroCharacterEntry("vespa", "vespa.png", isMarvel = true),
+
+    // Lote 4
+    HeroCharacterEntry("arqueiro-verde", "arqueiro-verde.png", isMarvel = false),
+    HeroCharacterEntry("arsenal", "arsenal.png", isMarvel = false),
+    HeroCharacterEntry("batman_2", "batman_2.png", isMarvel = false),
+    HeroCharacterEntry("canario-negro", "canario-negro.png", isMarvel = false),
+    HeroCharacterEntry("flash", "flash.png", isMarvel = false),
+    HeroCharacterEntry("iris-west", "iris-west.png", isMarvel = false),
+    HeroCharacterEntry("lois-lane", "lois-lane.png", isMarvel = false),
+    HeroCharacterEntry("mulher-gato", "mulher-gato.png", isMarvel = false),
+    HeroCharacterEntry("mulher-maravilha_2", "mulher-maravilha_2.png", isMarvel = false)
 )
 
 private fun normalizeHeroKey(raw: String): String {
@@ -112,15 +126,48 @@ private fun normalizeHeroKey(raw: String): String {
         .trim('-')
 }
 
-private fun resolveProfileAssetFile(profile: ProfileEntity): String {
+private fun resolveHeroEntry(profile: ProfileEntity): HeroCharacterEntry {
     val normalizedName = normalizeHeroKey(profile.name)
-    val directMatch = HeroProfileAssets.firstOrNull { (key, _) ->
-        normalizedName == key || normalizedName.contains(key)
+    val matched = HeroProfileCatalog.firstOrNull { entry ->
+        normalizedName == entry.key || normalizedName.contains(entry.key)
     }
-    if (directMatch != null) return directMatch.second
+    if (matched != null) return matched
 
-    val index = abs(profile.id.hashCode()) % HeroProfileAssets.size
-    return HeroProfileAssets[index].second
+    val index = abs(profile.id.hashCode()) % HeroProfileCatalog.size
+    return HeroProfileCatalog[index]
+}
+
+private fun resolveIsMarvel(profile: ProfileEntity, matchedEntry: HeroCharacterEntry): Boolean {
+    val universe = profile.universe.trim().lowercase()
+    return when {
+        universe.contains("marvel") -> true
+        universe.contains("dc") -> false
+        normalizeHeroKey(profile.name) == matchedEntry.key ||
+            normalizeHeroKey(profile.name).contains(matchedEntry.key) -> matchedEntry.isMarvel
+        else -> abs(profile.id.hashCode()) % 2 == 0
+    }
+}
+
+private fun heroCardBackgroundBrush(isMarvel: Boolean): Brush {
+    return if (isMarvel) {
+        // Vermelho com dourado representando os heróis Marvel
+        Brush.linearGradient(
+            colors = listOf(
+                Color(0xFF991B1B),
+                Color(0xFF450A0A),
+                Color(0xFFB45309)
+            )
+        )
+    } else {
+        // Azul com branco representando os heróis DC Comics
+        Brush.linearGradient(
+            colors = listOf(
+                Color(0xFF1D4ED8),
+                Color(0xFF1E3A8A),
+                Color(0xFFE2E8F0)
+            )
+        )
+    }
 }
 
 @Composable
@@ -139,36 +186,42 @@ private fun rememberProfileAvatarBitmap(fileName: String): ImageBitmap? {
 
 @Composable
 private fun ProfileHeroAvatar(
-    profile: ProfileEntity,
+    fileName: String,
+    profileName: String,
     isMarvel: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val fileName = remember(profile.id, profile.name) { resolveProfileAssetFile(profile) }
     val bitmap = rememberProfileAvatarBitmap(fileName)
 
     Box(
         modifier = modifier
-            .size(48.dp)
+            .size(50.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(
-                Brush.linearGradient(
-                    if (isMarvel) listOf(MarvelRed, Color(0xFF450A0A))
-                    else listOf(DcBlue, DcCyan)
-                )
+                if (isMarvel) {
+                    Brush.linearGradient(listOf(MarvelYellow, MarvelRed))
+                } else {
+                    Brush.linearGradient(listOf(Color.White, DcBlue))
+                }
+            )
+            .border(
+                width = 1.5.dp,
+                color = if (isMarvel) MarvelYellow else Color.White,
+                shape = RoundedCornerShape(12.dp)
             ),
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
-                contentDescription = profile.name,
+                contentDescription = profileName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
             Text(
                 text = if (isMarvel) "M" else "DC",
-                color = Color.White,
+                color = if (isMarvel) Color.Black else Color(0xFF0F172A),
                 fontWeight = FontWeight.Black
             )
         }
@@ -249,18 +302,32 @@ fun ProfilesScreen(
             ) {
                 items(sortedProfiles, key = { it.id }) { profile ->
                     val isActive = profile.id == activeProfileId
-                    val isMarvel = profile.universe.equals("marvel", ignoreCase = true)
+                    val heroEntry = remember(profile.id, profile.name) { resolveHeroEntry(profile) }
+                    val isMarvel = remember(profile.id, profile.name, profile.universe, heroEntry) {
+                        resolveIsMarvel(profile, heroEntry)
+                    }
+                    val cardBrush = remember(isMarvel) { heroCardBackgroundBrush(isMarvel) }
+                    val borderColor = if (isMarvel) {
+                        MarvelYellow.copy(alpha = 0.75f)
+                    } else {
+                        Color.White.copy(alpha = 0.75f)
+                    }
+                    val secondaryTextColor = if (isMarvel) {
+                        Color(0xFFFEF3C7)
+                    } else {
+                        Color(0xFFF8FAFC)
+                    }
                     val validityInfo = formatValidity(profile.validityIso)
 
                     Box(
                         modifier = Modifier
                             .height(190.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    if (isMarvel) listOf(Color(0xE0260A12), Color(0xF00E0A12))
-                                    else listOf(Color(0xE00A1628), Color(0xF00A0E18))
-                                )
+                            .background(cardBrush)
+                            .border(
+                                width = if (isActive) 2.5.dp else 1.25.dp,
+                                color = if (isActive) GoldFocus else borderColor,
+                                shape = RoundedCornerShape(16.dp)
                             )
                             .heroFocusable(RoundedCornerShape(16.dp)) {
                                 onSelectProfile(profile.id)
@@ -277,7 +344,8 @@ fun ProfilesScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 ProfileHeroAvatar(
-                                    profile = profile,
+                                    fileName = heroEntry.fileName,
+                                    profileName = profile.name,
                                     isMarvel = isMarvel
                                 )
 
@@ -298,7 +366,7 @@ fun ProfilesScreen(
                                         modifier = Modifier
                                             .size(26.dp)
                                             .clip(CircleShape)
-                                            .background(MarvelRed.copy(alpha = 0.85f))
+                                            .background(MarvelRed.copy(alpha = 0.9f))
                                             .heroFocusable(CircleShape) { onDeleteProfile(profile.id) },
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -310,7 +378,7 @@ fun ProfilesScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text = profile.name,
-                                    color = TextPrimary,
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
                                     maxLines = 1,
@@ -319,7 +387,7 @@ fun ProfilesScreen(
                                 val hostLabel = extractProfileHost(profile).ifBlank { "sem-host" }
                                 Text(
                                     text = "$hostLabel • ${profile.sourceType.uppercase()}${if (profile.bulkOrigin) " • LOTE" else ""}",
-                                    color = TextDim,
+                                    color = secondaryTextColor,
                                     fontSize = 11.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -332,12 +400,27 @@ fun ProfilesScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("TV ${profile.liveCount}", color = MarvelYellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("VOD ${profile.vodCount}", color = DcCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("SER ${profile.seriesCount}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "TV ${profile.liveCount}",
+                                        color = if (isMarvel) MarvelYellow else Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "VOD ${profile.vodCount}",
+                                        color = if (isMarvel) Color(0xFFFDE68A) else DcCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "SER ${profile.seriesCount}",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     Text(
                                         "CON ${profile.activeConnections}/${profile.maxConnections ?: "∞"}",
-                                        color = TextDim,
+                                        color = secondaryTextColor,
                                         fontSize = 11.sp
                                     )
                                 }
