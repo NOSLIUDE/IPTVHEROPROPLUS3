@@ -1,5 +1,8 @@
 package com.iptvhero.pro.ui.screens
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,11 +25,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,12 +49,131 @@ import com.iptvhero.pro.ui.theme.MarvelRed
 import com.iptvhero.pro.ui.theme.MarvelYellow
 import com.iptvhero.pro.ui.theme.TextDim
 import com.iptvhero.pro.ui.theme.TextPrimary
-import android.net.Uri
-import androidx.compose.runtime.remember
+import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import kotlin.math.abs
+
+private val HeroProfileAssets: List<Pair<String, String>> = listOf(
+    "batman" to "batman.png",
+    "capitao-america" to "capitao-america.png",
+    "homem-aranha" to "homem-aranha.png",
+    "homem-de-ferro" to "homem-de-ferro.png",
+    "lanterna-verde" to "lanterna-verde.png",
+    "mulher-maravilha" to "mulher-maravilha.png",
+    "shazam" to "shazam.png",
+    "super-homem" to "super-homem.png",
+    "thor" to "thor.png",
+    "wolverine" to "wolverine.png",
+    "aranha-de-ferro" to "aranha-de-ferro.png",
+    "dentinho" to "dentinho.png",
+    "garota-aranha" to "garota-aranha.png",
+    "hulk" to "hulk.png",
+    "jessica-jones" to "jessica-jones.png",
+    "mulher-hulk" to "mulher-hulk.png",
+    "nova" to "nova.png",
+    "pantera-negra" to "pantera-negra.png",
+    "soldado-invernal" to "soldado-invernal.png",
+    "thor_2" to "thor_2.png",
+    "doutor-estranho" to "doutor-estranho.png",
+    "elektra" to "elektra.png",
+    "gaviao-arqueiro" to "gaviao-arqueiro.png",
+    "maquina-de-combate" to "maquina-de-combate.png",
+    "motoqueiro-fantasma" to "motoqueiro-fantasma.png",
+    "mulher-aranha" to "mulher-aranha.png",
+    "mulher-escarlate" to "mulher-escarlate.png",
+    "nick-fury" to "nick-fury.png",
+    "punho-de-ferro" to "punho-de-ferro.png",
+    "vespa" to "vespa.png",
+    "arqueiro-verde" to "arqueiro-verde.png",
+    "arsenal" to "arsenal.png",
+    "batman_2" to "batman_2.png",
+    "canario-negro" to "canario-negro.png",
+    "flash" to "flash.png",
+    "iris-west" to "iris-west.png",
+    "lois-lane" to "lois-lane.png",
+    "mulher-gato" to "mulher-gato.png",
+    "mulher-maravilha_2" to "mulher-maravilha_2.png"
+)
+
+private fun normalizeHeroKey(raw: String): String {
+    return raw.trim()
+        .lowercase()
+        .removeSuffix(".png")
+        .replace(Regex("[áàâãä]"), "a")
+        .replace(Regex("[éèêë]"), "e")
+        .replace(Regex("[íìîï]"), "i")
+        .replace(Regex("[óòôõö]"), "o")
+        .replace(Regex("[úùûü]"), "u")
+        .replace("ç", "c")
+        .replace(Regex("[^a-z0-9_]+"), "-")
+        .trim('-')
+}
+
+private fun resolveProfileAssetFile(profile: ProfileEntity): String {
+    val normalizedName = normalizeHeroKey(profile.name)
+    val directMatch = HeroProfileAssets.firstOrNull { (key, _) ->
+        normalizedName == key || normalizedName.contains(key)
+    }
+    if (directMatch != null) return directMatch.second
+
+    val index = abs(profile.id.hashCode()) % HeroProfileAssets.size
+    return HeroProfileAssets[index].second
+}
+
+@Composable
+private fun rememberProfileAvatarBitmap(fileName: String): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(fileName) {
+        try {
+            context.assets.open("avatars/$fileName").use { stream ->
+                BitmapFactory.decodeStream(stream)?.asImageBitmap()
+            }
+        } catch (_: IOException) {
+            null
+        }
+    }
+}
+
+@Composable
+private fun ProfileHeroAvatar(
+    profile: ProfileEntity,
+    isMarvel: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val fileName = remember(profile.id, profile.name) { resolveProfileAssetFile(profile) }
+    val bitmap = rememberProfileAvatarBitmap(fileName)
+
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                Brush.linearGradient(
+                    if (isMarvel) listOf(MarvelRed, Color(0xFF450A0A))
+                    else listOf(DcBlue, DcCyan)
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = profile.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = if (isMarvel) "M" else "DC",
+                color = Color.White,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
 
 @Composable
 fun ProfilesScreen(
@@ -149,15 +276,10 @@ fun ProfilesScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Brush.linearGradient(listOf(DcBlue, DcCyan))),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(if (isMarvel) "M" else "DC", color = Color.White, fontWeight = FontWeight.Black)
-                                }
+                                ProfileHeroAvatar(
+                                    profile = profile,
+                                    isMarvel = isMarvel
+                                )
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
