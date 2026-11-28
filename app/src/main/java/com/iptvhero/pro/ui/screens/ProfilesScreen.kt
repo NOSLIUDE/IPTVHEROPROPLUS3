@@ -165,26 +165,6 @@ private fun resolveStrictHeroLabel(profile: ProfileEntity, hero: ScreenHeroCard,
     return ScreenHeroCatalog.formatHeroNumberedName(hero, index + 1)
 }
 
-private fun cardOverlayBrush(isMarvel: Boolean): Brush {
-    return if (isMarvel) {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0x66991B1B),
-                Color(0xB8450A0A),
-                Color(0xD978350F)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0x591D4ED8),
-                Color(0xB01E3A8A),
-                Color(0xCCDDEAF8)
-            )
-        )
-    }
-}
-
 @Composable
 private fun rememberHeroCardBitmap(assetFileName: String): ImageBitmap? {
     val context = LocalContext.current
@@ -293,8 +273,6 @@ fun ProfilesScreen(
                     } else {
                         Color.White.copy(alpha = 0.85f)
                     }
-                    val primaryTextColor = if (isMarvel) Color.White else Color(0xFF0F172A)
-                    val secondaryTextColor = if (isMarvel) Color(0xFFFEF3C7) else Color(0xFF1E293B)
                     val validityInfo = formatValidity(profile.validityIso)
 
                     Box(
@@ -321,131 +299,118 @@ fun ProfilesScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(
-                                        Brush.linearGradient(
-                                            if (isMarvel) listOf(Color(0xE0260A12), Color(0xF00E0A12))
-                                            else listOf(Color(0xE00A1628), Color(0xF00A0E18))
-                                        )
-                                    )
+                                    .background(Color(0xFF10131C))
                             )
                         }
 
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(cardOverlayBrush(isMarvel))
-                                .padding(14.dp)
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.SpaceBetween
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        if (isActive) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(Color.Black.copy(alpha = 0.72f))
-                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                                            ) {
-                                                Text(
-                                                    text = "ATIVO",
-                                                    color = GoldFocus,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.ExtraBold
-                                                )
-                                            }
-                                        }
-
+                                    if (isActive) {
                                         Box(
                                             modifier = Modifier
-                                                .size(26.dp)
-                                                .clip(CircleShape)
-                                                .background(MarvelRed.copy(alpha = 0.92f))
-                                                .heroFocusable(CircleShape) { onDeleteProfile(profile.id) },
-                                            contentAlignment = Alignment.Center
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color.Black.copy(alpha = 0.78f))
+                                                .padding(horizontal = 8.dp, vertical = 3.dp)
                                         ) {
                                             Text(
-                                                text = "X",
-                                                color = Color.White,
+                                                text = "ATIVO",
+                                                color = GoldFocus,
                                                 fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.ExtraBold
                                             )
                                         }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .background(MarvelRed.copy(alpha = 0.92f))
+                                            .heroFocusable(CircleShape) { onDeleteProfile(profile.id) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "X",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
+                            }
 
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (isMarvel) Color(0xCC2A070B)
-                                            else Color(0xD9EFF6FF)
-                                        )
-                                        .padding(horizontal = 12.dp, vertical = 9.dp)
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xBA090D16))
+                                    .padding(horizontal = 12.dp, vertical = 9.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(
+                                        text = heroTitle,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val hostLabel = extractProfileHost(profile).ifBlank { "sem-host" }
+                                    Text(
+                                        text = "$hostLabel • ${profile.sourceType.uppercase()}${if (profile.bulkOrigin) " • LOTE" else ""}",
+                                        color = Color(0xFFE2E8F0),
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        letterSpacing = 0.4.sp
+                                    )
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            text = heroTitle,
-                                            color = primaryTextColor,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        val hostLabel = extractProfileHost(profile).ifBlank { "sem-host" }
-                                        Text(
-                                            text = "$hostLabel • ${profile.sourceType.uppercase()}${if (profile.bulkOrigin) " • LOTE" else ""}",
-                                            color = secondaryTextColor,
-                                            fontSize = 10.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            letterSpacing = 0.4.sp
-                                        )
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "TV ${profile.liveCount}",
-                                                color = if (isMarvel) MarvelYellow else DcBlue,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = "VOD ${profile.vodCount}",
-                                                color = if (isMarvel) Color(0xFFFDE68A) else Color(0xFF0369A1),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = "SER ${profile.seriesCount}",
-                                                color = primaryTextColor,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = "CON ${profile.activeConnections}/${profile.maxConnections ?: "∞"}",
-                                                color = secondaryTextColor,
-                                                fontSize = 11.sp
-                                            )
-                                        }
-                                        Text(
-                                            text = validityInfo.first,
-                                            color = validityInfo.second,
+                                            text = "TV ${profile.liveCount}",
+                                            color = MarvelYellow,
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "VOD ${profile.vodCount}",
+                                            color = Color(0xFF7DD3FC),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "SER ${profile.seriesCount}",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "CON ${profile.activeConnections}/${profile.maxConnections ?: "∞"}",
+                                            color = Color(0xFFCBD5E1),
+                                            fontSize = 11.sp
                                         )
                                     }
+                                    Text(
+                                        text = validityInfo.first,
+                                        color = validityInfo.second,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
@@ -539,7 +504,7 @@ private fun formatValidity(validityIso: String?): Pair<String, Color> {
         when {
             days < 0 -> Pair("Expirado ($formatted)", Color(0xFFFF6B6E))
             days <= 7 -> Pair("${days}d restantes ($formatted)", Color(0xFFFFB347))
-            else -> Pair("${days}d • Válido até $formatted", Color(0xFF15803D))
+            else -> Pair("${days}d • Válido até $formatted", Color(0xFF4ADE80))
         }
     } catch (_: Exception) {
         Pair("Sem validade", TextDim)
