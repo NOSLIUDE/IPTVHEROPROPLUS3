@@ -1,5 +1,7 @@
 package com.iptvhero.pro.data.repository
 
+import com.iptvhero.pro.data.local.CardHeroCatalog
+import com.iptvhero.pro.data.local.CardHeroSpec
 import com.iptvhero.pro.data.local.ChannelDao
 import com.iptvhero.pro.data.local.ChannelEntity
 import com.iptvhero.pro.data.local.ProfileDao
@@ -20,7 +22,6 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.random.Random
 
 data class PlaylistItem(
     val title: String,
@@ -39,7 +40,8 @@ data class XtreamCredentials(
 
 data class HeroIdentity(
     val name: String,
-    val universe: String
+    val universe: String,
+    val avatarKey: String
 )
 
 data class BulkProgress(
@@ -80,32 +82,71 @@ data class MediaDetails(
     val contentType: String = "VOD"
 )
 
-object HeroGenerator {
-    private val MARVEL_HEROES = listOf(
-        "Homem de Ferro", "Capitão América", "Thor", "Hulk", "Viúva Negra",
-        "Homem-Aranha", "Doutor Estranho", "Pantera Negra", "Capitã Marvel",
-        "Feiticeira Escarlate", "Visão", "Falcão", "Soldado Invernal",
-        "Gavião Arqueiro", "Star-Lord", "Gamora", "Rocket", "Groot",
-        "Drax", "Mantis", "Shang-Chi", "Ms. Marvel", "Cavaleiro da Lua",
-        "Mulher-Hulk", "Loki", "Kate Bishop", "Yelena", "Sam Wilson"
-    )
+/**
+ * Helper central que restringe os perfis apenas aos 16 personagens com card,
+ * repete as imagens/cards de forma cíclica sem limitar o número de listas e
+ * gera nomes no formato "<HEROI_DOS_16>_<NUMERAL>".
+ */
+object CardProfileHelper {
+    private val sequenceCounter = AtomicInteger(1)
 
-    private val DC_HEROES = listOf(
-        "Batman", "Superman", "Mulher-Maravilha", "Flash", "Aquaman",
-        "Ciborgue", "Lanterna Verde", "Arqueiro Verde", "Canário Negro",
-        "Supergirl", "Batwoman", "Shazam", "Adão Negro", "Besouro Azul",
-        "Zatanna", "Constantine", "Asa Noturna", "Estelar", "Mutano",
-        "Ravena", "Mulher-Gato", "Arlequina", "Pacificador", "Caçador de Marte"
-    )
+    fun nextSequenceNumber(): Int = sequenceCounter.getAndIncrement()
 
-    fun generateHeroName(): HeroIdentity {
-        val isMarvel = Random.nextBoolean()
-        val universe = if (isMarvel) "marvel" else "dc"
-        val list = if (isMarvel) MARVEL_HEROES else DC_HEROES
-        val base = list[Random.nextInt(list.size)]
-        val suffix = Random.nextInt(1000, 10000)
-        return HeroIdentity(name = "${base}_$suffix", universe = universe)
+    fun resolveHero(seedIndex: Int, vararg hints: String?): CardHeroSpec =
+        CardHeroCatalog.resolveFrom16(seedIndex = seedIndex, candidates = hints)
+
+    fun createHeroIdentity(seedIndex: Int = 0, vararg hints: String?): HeroIdentity {
+        val seq = nextSequenceNumber()
+        val spec = resolveHero(seedIndex = seedIndex, hints = hints)
+        return HeroIdentity(
+            name = CardHeroCatalog.formatHeroNumberedName(spec, seq),
+            universe = spec.universe.value,
+            avatarKey = spec.key
+        )
     }
+
+    fun buildStrictProfile(
+        seedIndex: Int = 0,
+        hint: String? = null,
+        sourceType: String = "m3u",
+        sourceLabel: String = "",
+        server: String? = null,
+        user: String? = null,
+        pass: String? = null,
+        validityIso: String? = null,
+        maxConnections: Int? = null,
+        activeConnections: Int = 0,
+        liveCount: Int = 0,
+        vodCount: Int = 0,
+        seriesCount: Int = 0,
+        bulkOrigin: Boolean = false,
+        isActive: Boolean = false
+    ): ProfileEntity {
+        val identity = createHeroIdentity(seedIndex = seedIndex, hint, server, sourceLabel)
+        return ProfileEntity(
+            name = identity.name,
+            avatarKey = identity.avatarKey,
+            universe = identity.universe,
+            sourceType = sourceType,
+            sourceLabel = sourceLabel,
+            server = server,
+            user = user,
+            pass = pass,
+            validityIso = validityIso,
+            maxConnections = maxConnections,
+            activeConnections = activeConnections,
+            liveCount = liveCount,
+            vodCount = vodCount,
+            seriesCount = seriesCount,
+            bulkOrigin = bulkOrigin,
+            isActive = isActive
+        )
+    }
+}
+
+object HeroGenerator {
+    fun generateHeroName(seedIndex: Int = 0, vararg hints: String?): HeroIdentity =
+        CardProfileHelper.createHeroIdentity(seedIndex = seedIndex, hints = hints)
 }
 
 object PlaylistParser {
@@ -308,8 +349,8 @@ class IptvRepository(
         }
 
     /**
-     * Processa um lote de linhas (igual ao processBulk / processOneBulkLine do index_2.html),
-     * criando 1 perfil por linha valida com nome de heroi Marvel/DC, validade, conexoes e contagens.
+     * Processa um lote de linhas sem limitar a 16 listas, gerando perfis apenas entre
+     * os 16 herois dos cards no formato "<HEROI>_<NUMERAL>".
      */
     suspend fun processBulkLines(
         rawLines: List<String>,
@@ -342,7 +383,7 @@ class IptvRepository(
                 async {
                     semaphore.withPermit {
                         val resultLog = try {
-                            val info = processSingleBulkLine(line, isHeroOrigin)
+                            val info = processSingleBulkLine(line, isHeroOrigin, idx)
                             successCount.incrementAndGet()
                             "OK [${idx + 1}] $info"
                         } catch (e: Exception) {
@@ -368,51 +409,44 @@ class IptvRepository(
         Pair(successCount.get(), failedCount.get())
     }
 
-    /**
-     * Identico ao processOneBulkLine(line) do index_2.html
-     */
-    private suspend fun processSingleBulkLine(line: String, bulkOrigin: Boolean): String {
+    private suspend fun processSingleBulkLine(line: String, bulkOrigin: Boolean, seedIndex: Int): String {
         val creds = PlaylistParser.detectXtreamPure(line)
         if (creds != null) {
-            return bulkLoadXtreamProfileOnly(creds.server, creds.username, creds.password, bulkOrigin)
+            return bulkLoadXtreamProfileOnly(creds.server, creds.username, creds.password, bulkOrigin, seedIndex)
         }
 
         if (line.matches(Regex("^https?://.*", RegexOption.IGNORE_CASE))) {
             val isM3uHint = line.contains("m3u", ignoreCase = true) ||
                 line.contains("get.php", ignoreCase = true) ||
                 line.contains("type=m3u", ignoreCase = true)
-            val hero = HeroGenerator.generateHeroName()
-            val profileId = profileDao.insertProfile(
-                ProfileEntity(
-                    name = hero.name,
-                    universe = hero.universe,
-                    sourceType = if (isM3uHint) "m3u" else "txt",
-                    sourceLabel = line.take(300),
-                    liveCount = 0,
-                    vodCount = 0,
-                    seriesCount = 0,
-                    bulkOrigin = bulkOrigin,
-                    isActive = false
-                )
+            val profile = CardProfileHelper.buildStrictProfile(
+                seedIndex = seedIndex,
+                hint = line,
+                sourceType = if (isM3uHint) "m3u" else "txt",
+                sourceLabel = line.take(300),
+                liveCount = 0,
+                vodCount = 0,
+                seriesCount = 0,
+                bulkOrigin = bulkOrigin,
+                isActive = false
             )
+            val profileId = profileDao.insertProfile(profile)
             profileDao.setActiveProfile(profileId)
-            return "${hero.name} (${if (isM3uHint) "M3U" else "TXT"}) - pendente"
+            return "${profile.name} (${if (isM3uHint) "M3U" else "TXT"}) - pendente"
         }
 
         val inline = PlaylistParser.parseInlineChannel(line)
         if (inline != null) {
-            val hero = HeroGenerator.generateHeroName()
-            val profileId = profileDao.insertProfile(
-                ProfileEntity(
-                    name = hero.name,
-                    universe = hero.universe,
-                    sourceType = "txt",
-                    sourceLabel = inline.first,
-                    liveCount = 1,
-                    bulkOrigin = bulkOrigin,
-                    isActive = false
-                )
+            val profile = CardProfileHelper.buildStrictProfile(
+                seedIndex = seedIndex,
+                hint = inline.first,
+                sourceType = "txt",
+                sourceLabel = inline.first,
+                liveCount = 1,
+                bulkOrigin = bulkOrigin,
+                isActive = false
             )
+            val profileId = profileDao.insertProfile(profile)
             channelDao.insertChannels(
                 listOf(
                     ChannelEntity(
@@ -425,22 +459,18 @@ class IptvRepository(
                 )
             )
             profileDao.setActiveProfile(profileId)
-            return "${hero.name} (inline) - 1"
+            return "${profile.name} (inline) - 1"
         }
 
         throw IllegalStateException("Nao reconhecido")
     }
 
-    /**
-     * Identico ao bulkLoadXtream(server, user, pass) do index_2.html:
-     * Valida credenciais, extrai exp_date, max_connections e contagens de live/vod/series
-     * sem sobrecarregar o banco antes do usuario clicar no card do perfil.
-     */
     private suspend fun bulkLoadXtreamProfileOnly(
         server: String,
         user: String,
         pass: String,
-        bulkOrigin: Boolean
+        bulkOrigin: Boolean,
+        seedIndex: Int = 0
     ): String {
         val cleanServer = server.trim().trimEnd('/')
         val encUser = URLEncoder.encode(user.trim(), "UTF-8")
@@ -458,34 +488,28 @@ class IptvRepository(
         val maxConnections = userInfo.optString("max_connections").toIntOrNull()
         val activeConnections = userInfo.optString("active_cons").toIntOrNull() ?: 0
 
-        val hero = HeroGenerator.generateHeroName()
-        val profileId = profileDao.insertProfile(
-            ProfileEntity(
-                name = hero.name,
-                universe = hero.universe,
-                sourceType = "xtream",
-                sourceLabel = cleanServer,
-                server = cleanServer,
-                user = user.trim(),
-                pass = pass.trim(),
-                validityIso = validityIso,
-                maxConnections = maxConnections,
-                activeConnections = activeConnections,
-                liveCount = 0,
-                vodCount = 0,
-                seriesCount = 0,
-                bulkOrigin = bulkOrigin,
-                isActive = false
-            )
+        val profile = CardProfileHelper.buildStrictProfile(
+            seedIndex = seedIndex,
+            hint = cleanServer,
+            sourceType = "xtream",
+            sourceLabel = cleanServer,
+            server = cleanServer,
+            user = user.trim(),
+            pass = pass.trim(),
+            validityIso = validityIso,
+            maxConnections = maxConnections,
+            activeConnections = activeConnections,
+            liveCount = 0,
+            vodCount = 0,
+            seriesCount = 0,
+            bulkOrigin = bulkOrigin,
+            isActive = false
         )
+        val profileId = profileDao.insertProfile(profile)
         profileDao.setActiveProfile(profileId)
-        return "${hero.name} (XTREAM) - perfil salvo"
+        return "${profile.name} (XTREAM) - perfil salvo"
     }
 
-    /**
-     * Identico ao activateProfile(id) do index_2.html:
-     * Ativa o perfil e reconecta automaticamente se for Xtream ou M3U remoto.
-     */
     suspend fun activateAndSyncProfile(
         profileId: Long,
         onStage: ((Float, String) -> Unit)? = null
@@ -564,8 +588,11 @@ class IptvRepository(
 
             onStage?.invoke(0.92f, "Atualizando perfil...")
             profileDao.getProfileById(profileId)?.let { p ->
+                val spec = CardProfileHelper.resolveHero(p.id.toInt(), p.avatarKey, p.name)
                 profileDao.updateProfile(
                     p.copy(
+                        avatarKey = spec.key,
+                        universe = spec.universe.value,
                         liveCount = items.size,
                         vodCount = 0,
                         seriesCount = 0,
@@ -576,9 +603,6 @@ class IptvRepository(
             items.size
         }
 
-    /**
-     * Identico ao loadXtreamData(server, user, pass, existingProfileId) do index_2.html
-     */
     suspend fun loadXtreamData(
         server: String,
         username: String,
@@ -692,8 +716,11 @@ class IptvRepository(
         val targetProfileId = if (existingProfileId != null) {
             val existing = profileDao.getProfileById(existingProfileId)
             if (existing != null) {
+                val spec = CardProfileHelper.resolveHero(existing.id.toInt(), existing.avatarKey, existing.name)
                 profileDao.updateProfile(
                     existing.copy(
+                        avatarKey = spec.key,
+                        universe = spec.universe.value,
                         validityIso = validityIso,
                         maxConnections = maxConnections,
                         activeConnections = activeConnections,
@@ -746,26 +773,24 @@ class IptvRepository(
         vodCount: Int,
         seriesCount: Int
     ): Long {
-        val hero = HeroGenerator.generateHeroName()
-        return profileDao.insertProfile(
-            ProfileEntity(
-                name = hero.name,
-                universe = hero.universe,
-                sourceType = "xtream",
-                sourceLabel = cleanServer,
-                server = cleanServer,
-                user = username.trim(),
-                pass = password.trim(),
-                validityIso = validityIso,
-                maxConnections = maxConnections,
-                activeConnections = activeConnections,
-                liveCount = liveCount,
-                vodCount = vodCount,
-                seriesCount = seriesCount,
-                bulkOrigin = false,
-                isActive = true
-            )
+        val profile = CardProfileHelper.buildStrictProfile(
+            seedIndex = 0,
+            hint = cleanServer,
+            sourceType = "xtream",
+            sourceLabel = cleanServer,
+            server = cleanServer,
+            user = username.trim(),
+            pass = password.trim(),
+            validityIso = validityIso,
+            maxConnections = maxConnections,
+            activeConnections = activeConnections,
+            liveCount = liveCount,
+            vodCount = vodCount,
+            seriesCount = seriesCount,
+            bulkOrigin = false,
+            isActive = true
         )
+        return profileDao.insertProfile(profile)
     }
 
     /**
@@ -949,11 +974,6 @@ class IptvRepository(
         )
     }
 
-    /**
-     * Exporta todos os perfis no formato exato do exportProfilesTXT() do index_2.html:
-     * sourceType|sourceLabel|server|user|pass|validity|maxConnections|hero|live|vod|series
-     */
-
     @Volatile
     private var cachedXmltvKey: String? = null
     @Volatile
@@ -1002,7 +1022,6 @@ class IptvRepository(
                 if (jsonItems.isNotEmpty()) return@withContext jsonItems
             }
 
-            // Fallback XMLTV quando get_short_epg não retorna itens ou quando a fonte é M3U/XMLTV
             fetchXmltvFallback(profile, resolvedId, channelTitle)
         }
 
@@ -1331,3 +1350,4 @@ class IptvRepository(
         return map
     }
 }
+```[cite: 13, 41]
