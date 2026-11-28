@@ -563,4 +563,3 @@ private fun HeroActionButton(text: String, isPrimary: Boolean, onClick: () -> Un
         Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
-```[cite: 13, 42]
