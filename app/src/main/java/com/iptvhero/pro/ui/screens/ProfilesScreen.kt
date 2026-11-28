@@ -40,9 +40,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.iptvhero.pro.data.local.CardHeroCatalog
-import com.iptvhero.pro.data.local.CardHeroSpec
-import com.iptvhero.pro.data.local.CardHeroUniverse
 import com.iptvhero.pro.data.local.ProfileEntity
 import com.iptvhero.pro.ui.components.heroFocusable
 import com.iptvhero.pro.ui.theme.DcBlue
@@ -51,29 +48,121 @@ import com.iptvhero.pro.ui.theme.HeroThemeType
 import com.iptvhero.pro.ui.theme.MarvelRed
 import com.iptvhero.pro.ui.theme.MarvelYellow
 import com.iptvhero.pro.ui.theme.TextDim
-import com.iptvhero.pro.ui.theme.TextPrimary
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import kotlin.math.abs
 
-private fun resolveCardHeroUniverse(profile: ProfileEntity, hero: CardHeroSpec): CardHeroUniverse {
-    return CardHeroUniverse.fromRaw(profile.universe) ?: hero.universe
+private enum class ScreenHeroUniverse(val value: String) {
+    MARVEL("marvel"),
+    DC("dc");
+
+    companion object {
+        fun fromRaw(raw: String?): ScreenHeroUniverse? = when (raw?.trim()?.lowercase()) {
+            "marvel" -> MARVEL
+            "dc", "dc comics", "dc_comics" -> DC
+            else -> null
+        }
+    }
 }
 
-private fun resolveStrictHeroLabel(profile: ProfileEntity, hero: CardHeroSpec, index: Int): String {
+private data class ScreenHeroCard(
+    val key: String,
+    val baseTag: String,
+    val displayName: String,
+    val assetFileName: String,
+    val universe: ScreenHeroUniverse,
+    val aliases: List<String> = emptyList()
+)
+
+private object ScreenHeroCatalog {
+    val all16: List<ScreenHeroCard> = listOf(
+        // DC (8)
+        ScreenHeroCard("batman", "BATMAN", "Batman", "01_batman_0801.png", ScreenHeroUniverse.DC, listOf("batman_0801", "morcego")),
+        ScreenHeroCard("superman", "SUPERMAN", "Superman", "02_superman_0001.png", ScreenHeroUniverse.DC, listOf("superman_0001", "super-homem", "super homem")),
+        ScreenHeroCard("wwoman", "WWOMAN", "Wonder Woman", "03_wwoman_0901.png", ScreenHeroUniverse.DC, listOf("wwoman_0901", "wonder woman", "mulher-maravilha", "mulher maravilha")),
+        ScreenHeroCard("flash", "FLASH", "Flash", "04_flash_0501.png", ScreenHeroUniverse.DC, listOf("flash_0501", "the flash")),
+        ScreenHeroCard("aquaman", "AQUAMAN", "Aquaman", "05_aquaman_0701.png", ScreenHeroUniverse.DC, listOf("aquaman_0701")),
+        ScreenHeroCard("glantern", "GLANTERN", "Green Lantern", "06_glantern_2814.png", ScreenHeroUniverse.DC, listOf("glantern_2814", "green lantern", "lanterna verde", "lanterna-verde")),
+        ScreenHeroCard("garrow", "GARROW", "Green Arrow", "07_garrow_0101.png", ScreenHeroUniverse.DC, listOf("garrow_0101", "green arrow", "arqueiro verde", "arqueiro-verde")),
+        ScreenHeroCard("cyborg", "CYBORG", "Cyborg", "08_cyborg_0001.png", ScreenHeroUniverse.DC, listOf("cyborg_0001")),
+
+        // Marvel (8)
+        ScreenHeroCard("ironman", "IRONMAN", "Iron Man", "09_ironman_0001.png", ScreenHeroUniverse.MARVEL, listOf("ironman_0001", "iron man", "homem de ferro", "homem-de-ferro")),
+        ScreenHeroCard("captain", "CAPTAIN", "Captain America", "10_captain_0001.png", ScreenHeroUniverse.MARVEL, listOf("captain_0001", "captain america", "capitao america", "capitão américa", "capitao-america")),
+        ScreenHeroCard("thor", "THOR", "Thor", "11_thor_0001.png", ScreenHeroUniverse.MARVEL, listOf("thor_0001")),
+        ScreenHeroCard("hulk", "HULK", "Hulk", "12_hulk_0001.png", ScreenHeroUniverse.MARVEL, listOf("hulk_0001")),
+        ScreenHeroCard("spider", "SPIDER", "Spider-Man", "13_spider_0001.png", ScreenHeroUniverse.MARVEL, listOf("spider_0001", "spiderman", "spider-man", "homem aranha", "homem-aranha")),
+        ScreenHeroCard("bwidow", "BWIDOW", "Black Widow", "14_bwidow_0001.png", ScreenHeroUniverse.MARVEL, listOf("bwidow_0001", "black widow", "viuva negra", "viúva negra", "viuva-negra")),
+        ScreenHeroCard("dstrange", "DSTRANGE", "Doctor Strange", "15_dstrange_0001.png", ScreenHeroUniverse.MARVEL, listOf("dstrange_0001", "doctor strange", "doutor estranho", "doutor-estranho")),
+        ScreenHeroCard("bpanther", "BPANTHER", "Black Panther", "16_bpanther_0001.png", ScreenHeroUniverse.MARVEL, listOf("bpanther_0001", "black panther", "pantera negra", "pantera-negra"))
+    )
+
+    private fun normalize(raw: String): String =
+        raw.trim()
+            .lowercase()
+            .removeSuffix(".png")
+            .replace(Regex("[áàâãä]"), "a")
+            .replace(Regex("[éèêë]"), "e")
+            .replace(Regex("[íìîï]"), "i")
+            .replace(Regex("[óòôõö]"), "o")
+            .replace(Regex("[úùûü]"), "u")
+            .replace("ç", "c")
+            .replace(Regex("[^a-z0-9_]+"), "-")
+            .trim('-')
+
+    fun findMatch(vararg candidates: String?): ScreenHeroCard? {
+        for (candidate in candidates) {
+            if (candidate.isNullOrBlank()) continue
+            val norm = normalize(candidate)
+            if (norm.isBlank()) continue
+
+            all16.firstOrNull { spec ->
+                normalize(spec.key) == norm ||
+                    normalize(spec.baseTag) == norm ||
+                    normalize(spec.assetFileName) == norm ||
+                    normalize(spec.displayName) == norm ||
+                    spec.aliases.any { normalize(it) == norm }
+            }?.let { return it }
+
+            all16.firstOrNull { spec ->
+                val terms = (listOf(spec.key, spec.baseTag, spec.displayName) + spec.aliases).map { normalize(it) }
+                terms.any { term -> term.length >= 4 && norm.contains(term) }
+            }?.let { return it }
+        }
+        return null
+    }
+
+    fun resolveFrom16(seedIndex: Int, vararg candidates: String?): ScreenHeroCard {
+        findMatch(*candidates)?.let { return it }
+        val idx = abs(seedIndex) % all16.size
+        return all16[idx]
+    }
+
+    fun formatHeroNumberedName(spec: ScreenHeroCard, sequenceNumber: Int): String {
+        val safeNum = sequenceNumber.coerceAtLeast(1)
+        return "${spec.baseTag}_${safeNum.toString().padStart(4, '0')}"
+    }
+}
+
+private fun resolveCardHeroUniverse(profile: ProfileEntity, hero: ScreenHeroCard): ScreenHeroUniverse {
+    return ScreenHeroUniverse.fromRaw(profile.universe) ?: hero.universe
+}
+
+private fun resolveStrictHeroLabel(profile: ProfileEntity, hero: ScreenHeroCard, index: Int): String {
     val trimmed = profile.name.trim().uppercase()
     val match = Regex("^([A-Z0-9]+)_(\\d+)$").matchEntire(trimmed)
     if (match != null) {
         val prefix = match.groupValues[1]
         val numStr = match.groupValues[2]
-        val matchedHero = CardHeroCatalog.findMatch(prefix)
+        val matchedHero = ScreenHeroCatalog.findMatch(prefix)
         if (matchedHero != null) {
             return "${matchedHero.baseTag}_$numStr"
         }
     }
-    return CardHeroCatalog.formatHeroNumberedName(hero, index + 1)
+    return ScreenHeroCatalog.formatHeroNumberedName(hero, index + 1)
 }
 
 private fun cardOverlayBrush(isMarvel: Boolean): Brush {
@@ -186,15 +275,18 @@ fun ProfilesScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                itemsIndexed(sortedProfiles, key = { _, profile -> profile.id }) { index, profile ->
+                itemsIndexed(
+                    items = sortedProfiles,
+                    key = { _: Int, profile: ProfileEntity -> profile.id }
+                ) { index: Int, profile: ProfileEntity ->
                     val heroSpec = remember(profile.id, profile.avatarKey, profile.name, index) {
-                        CardHeroCatalog.resolveFrom16(index, profile.avatarKey, profile.name)
+                        ScreenHeroCatalog.resolveFrom16(index, profile.avatarKey, profile.name)
                     }
                     val heroTitle = remember(profile.id, profile.name, heroSpec, index) {
                         resolveStrictHeroLabel(profile, heroSpec, index)
                     }
                     val isActive = profile.id == activeProfileId
-                    val isMarvel = resolveCardHeroUniverse(profile, heroSpec) == CardHeroUniverse.MARVEL
+                    val isMarvel = resolveCardHeroUniverse(profile, heroSpec) == ScreenHeroUniverse.MARVEL
                     val cardBitmap = rememberHeroCardBitmap(heroSpec.assetFileName)
                     val borderColor = if (isMarvel) {
                         MarvelYellow.copy(alpha = 0.85f)
