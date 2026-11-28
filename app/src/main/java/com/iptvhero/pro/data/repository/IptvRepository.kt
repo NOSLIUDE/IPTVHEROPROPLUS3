@@ -20,7 +20,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
 import java.time.Instant
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 data class PlaylistItem(
@@ -82,11 +87,6 @@ data class MediaDetails(
     val contentType: String = "VOD"
 )
 
-/**
- * Helper central que restringe os perfis apenas aos 16 personagens com card,
- * repete as imagens/cards de forma cíclica sem limitar o número de listas e
- * gera nomes no formato "<HEROI_DOS_16>_<NUMERAL>".
- */
 object CardProfileHelper {
     private val sequenceCounter = AtomicInteger(1)
 
@@ -151,9 +151,6 @@ object HeroGenerator {
 
 object PlaylistParser {
 
-    /**
-     * Identico ao parseM3U(text) do index_2.html
-     */
     fun parseM3U(text: String): List<PlaylistItem> {
         val lines = text.split(Regex("\r?\n"))
         val channels = mutableListOf<PlaylistItem>()
@@ -198,9 +195,6 @@ object PlaylistParser {
         return channels
     }
 
-    /**
-     * Identico ao parseTXT(text) do index_2.html
-     */
     fun parseTXT(text: String): List<PlaylistItem> {
         val lines = text.split(Regex("\r?\n"))
         val channels = mutableListOf<PlaylistItem>()
@@ -222,10 +216,6 @@ object PlaylistParser {
         return channels
     }
 
-    /**
-     * Identico ao parseInlineChannel(line) do index_2.html:
-     * Retorna Pair(name, url)
-     */
     fun parseInlineChannel(line: String): Pair<String, String>? {
         val trimmed = line.trim()
         if (trimmed.contains(",")) {
@@ -244,9 +234,6 @@ object PlaylistParser {
         return null
     }
 
-    /**
-     * Identico ao detectXtreamPure(text) do index_2.html
-     */
     fun detectXtreamPure(text: String): XtreamCredentials? {
         val patterns = listOf(
             Regex("""https?://[^\s]+/get\.php\?[^\s]*username=([^&\s]+)[^\s]*password=([^&\s]+)""", RegexOption.IGNORE_CASE),
@@ -271,10 +258,6 @@ object PlaylistParser {
         return null
     }
 
-    /**
-     * Identico ao parseHeroUrls(text) do index_2.html:
-     * Cada linha nao comentada com '#' pode ser "URL | Meta" ou URL pura.
-     */
     fun parseHeroUrls(text: String): List<String> {
         return text.split(Regex("\r?\n"))
             .map { it.trim().removePrefix("\uFEFF") }
@@ -291,9 +274,9 @@ class IptvRepository(
     private val profileDao: ProfileDao,
     private val channelDao: ChannelDao,
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
     companion object {
@@ -325,9 +308,6 @@ class IptvRepository(
         return digest.joinToString("") { "%02x".format(it) }
     }
 
-    /**
-     * Baixa o arquivo remoto com cache-bust (?t=timestamp) igual ao heroUrlWithBust() do index_2.html
-     */
     suspend fun fetchHeroListRaw(url: String = HERO_LIST_URL): Pair<String, List<String>> =
         withContext(Dispatchers.IO) {
             val clean = url.trim()
@@ -348,10 +328,6 @@ class IptvRepository(
             Pair(text, urls)
         }
 
-    /**
-     * Processa um lote de linhas sem limitar a 16 listas, gerando perfis apenas entre
-     * os 16 herois dos cards no formato "<HEROI>_<NUMERAL>".
-     */
     suspend fun processBulkLines(
         rawLines: List<String>,
         isHeroOrigin: Boolean = true,
@@ -631,7 +607,6 @@ class IptvRepository(
         val vodItems = mutableListOf<PlaylistItem>()
         val seriesItems = mutableListOf<PlaylistItem>()
 
-        // 1. LIVE
         onStage?.invoke(0.36f, "Carregando canais ao vivo (TV)...")
         runCatching {
             val cats = fetchJsonArray("$base&action=get_live_categories").toCategoryMap()
@@ -658,7 +633,6 @@ class IptvRepository(
             }
         }
 
-        // 2. VOD
         onStage?.invoke(0.56f, "Carregando filmes (VOD)...")
         runCatching {
             val cats = fetchJsonArray("$base&action=get_vod_categories").toCategoryMap()
@@ -686,7 +660,6 @@ class IptvRepository(
             }
         }
 
-        // 3. SERIES
         onStage?.invoke(0.76f, "Carregando séries...")
         runCatching {
             val cats = fetchJsonArray("$base&action=get_series_categories").toCategoryMap()
@@ -793,9 +766,6 @@ class IptvRepository(
         return profileDao.insertProfile(profile)
     }
 
-    /**
-     * Carrega temporadas e episodios via get_series_info (identico ao loadSeriesInfo do index_2.html)
-     */
     suspend fun fetchSeriesSeasons(
         profile: ProfileEntity,
         seriesId: String
@@ -1210,8 +1180,8 @@ class IptvRepository(
         return try {
             val tzMatch = Regex("""([+-]\d{4})""").find(trimmed)
             val tzId = tzMatch?.groupValues?.getOrNull(1)?.let { "GMT$it" } ?: "UTC"
-            val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US).apply {
-                timeZone = java.util.TimeZone.getTimeZone(tzId)
+            val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone(tzId)
             }
             val padded = digits.padEnd(14, '0').take(14)
             sdf.parse(padded)?.time ?: 0L
@@ -1289,8 +1259,8 @@ class IptvRepository(
         if (raw.isBlank()) return ""
         if (raw.all { it.isDigit() } && raw.length >= 10) {
             val sec = raw.take(10).toLongOrNull() ?: return ""
-            val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            return fmt.format(java.util.Date(sec * 1000L))
+            val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+            return fmt.format(Date(sec * 1000L))
         }
         val timeMatch = Regex("(\\d{2}:\\d{2})").find(raw)
         return timeMatch?.groupValues?.getOrNull(1) ?: ""
@@ -1350,4 +1320,3 @@ class IptvRepository(
         return map
     }
 }
-```[cite: 13, 41]
