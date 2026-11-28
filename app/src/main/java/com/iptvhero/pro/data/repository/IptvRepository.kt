@@ -1406,4 +1406,3 @@ class IptvRepository(
         return map
     }
 }
-```[cite: 13, 41]
