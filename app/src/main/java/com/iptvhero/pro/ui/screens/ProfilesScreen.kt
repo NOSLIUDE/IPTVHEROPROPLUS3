@@ -46,7 +46,6 @@ import com.iptvhero.pro.data.local.CardHeroUniverse
 import com.iptvhero.pro.data.local.ProfileEntity
 import com.iptvhero.pro.ui.components.heroFocusable
 import com.iptvhero.pro.ui.theme.DcBlue
-import com.iptvhero.pro.ui.theme.DcCyan
 import com.iptvhero.pro.ui.theme.GoldFocus
 import com.iptvhero.pro.ui.theme.HeroThemeType
 import com.iptvhero.pro.ui.theme.MarvelRed
@@ -62,14 +61,18 @@ private fun resolveCardHeroUniverse(profile: ProfileEntity, hero: CardHeroSpec):
     return CardHeroUniverse.fromRaw(profile.universe) ?: hero.universe
 }
 
-private fun formatDisplayHeroLabel(profile: ProfileEntity, hero: CardHeroSpec, index: Int): String {
-    val trimmed = profile.name.trim()
-    val hasNumber = Regex("_\\d+$").containsMatchIn(trimmed)
-    return if (trimmed.isNotEmpty() && hasNumber) {
-        trimmed
-    } else {
-        CardHeroCatalog.formatHeroNumberedName(hero, index + 1)
+private fun resolveStrictHeroLabel(profile: ProfileEntity, hero: CardHeroSpec, index: Int): String {
+    val trimmed = profile.name.trim().uppercase()
+    val match = Regex("^([A-Z0-9]+)_(\\d+)$").matchEntire(trimmed)
+    if (match != null) {
+        val prefix = match.groupValues[1]
+        val numStr = match.groupValues[2]
+        val matchedHero = CardHeroCatalog.findMatch(prefix)
+        if (matchedHero != null) {
+            return "${matchedHero.baseTag}_$numStr"
+        }
     }
+    return CardHeroCatalog.formatHeroNumberedName(hero, index + 1)
 }
 
 private fun cardOverlayBrush(isMarvel: Boolean): Brush {
@@ -162,7 +165,9 @@ fun ProfilesScreen(
 
         if (sortedProfiles.isEmpty()) {
             Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -174,16 +179,18 @@ fun ProfilesScreen(
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 270.dp),
-                modifier = Modifier.weight(1f).padding(24.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(24.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 itemsIndexed(sortedProfiles, key = { _, profile -> profile.id }) { index, profile ->
                     val heroSpec = remember(profile.id, profile.avatarKey, profile.name, index) {
-                        CardHeroCatalog.resolveRepeating(index, profile.avatarKey, profile.name)
+                        CardHeroCatalog.resolveFrom16(index, profile.avatarKey, profile.name)
                     }
                     val heroTitle = remember(profile.id, profile.name, heroSpec, index) {
-                        formatDisplayHeroLabel(profile, heroSpec, index)
+                        resolveStrictHeroLabel(profile, heroSpec, index)
                     }
                     val isActive = profile.id == activeProfileId
                     val isMarvel = resolveCardHeroUniverse(profile, heroSpec) == CardHeroUniverse.MARVEL
@@ -262,7 +269,12 @@ fun ProfilesScreen(
                                                 .heroFocusable(CircleShape) { onDeleteProfile(profile.id) },
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Text("X", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = "X",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
                                     }
                                 }
@@ -300,25 +312,25 @@ fun ProfilesScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                "TV ${profile.liveCount}",
+                                                text = "TV ${profile.liveCount}",
                                                 color = if (isMarvel) MarvelYellow else DcBlue,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                "VOD ${profile.vodCount}",
+                                                text = "VOD ${profile.vodCount}",
                                                 color = if (isMarvel) Color(0xFFFDE68A) else Color(0xFF0369A1),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                "SER ${profile.seriesCount}",
+                                                text = "SER ${profile.seriesCount}",
                                                 color = primaryTextColor,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                "CON ${profile.activeConnections}/${profile.maxConnections ?: "∞"}",
+                                                text = "CON ${profile.activeConnections}/${profile.maxConnections ?: "∞"}",
                                                 color = secondaryTextColor,
                                                 fontSize = 11.sp
                                             )
@@ -447,6 +459,3 @@ private fun HeroActionButton(text: String, isPrimary: Boolean, onClick: () -> Un
         Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
-```[cite: 13]
-
-Se quiser que eu encaixe `buildHeroProfilesWithoutLimit` diretamente dentro do método da `HERO LISTA` no seu `IptvRepository.kt`, é só colar esse trecho do repositório aqui.
