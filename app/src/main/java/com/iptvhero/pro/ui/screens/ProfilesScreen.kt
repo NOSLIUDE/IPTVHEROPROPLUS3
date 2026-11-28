@@ -51,6 +51,7 @@ import com.iptvhero.pro.ui.theme.HeroThemeType
 import com.iptvhero.pro.ui.theme.MarvelRed
 import com.iptvhero.pro.ui.theme.MarvelYellow
 import com.iptvhero.pro.ui.theme.TextDim
+import com.iptvhero.pro.ui.theme.TextPrimary
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
@@ -223,6 +224,17 @@ fun ProfilesScreen(
                                 contentDescription = heroTitle,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            if (isMarvel) listOf(Color(0xE0260A12), Color(0xF00E0A12))
+                                            else listOf(Color(0xE00A1628), Color(0xF00A0E18))
+                                        )
+                                    )
                             )
                         }
 
@@ -459,3 +471,4 @@ private fun HeroActionButton(text: String, isPrimary: Boolean, onClick: () -> Un
         Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
+```[cite: 13, 42]
